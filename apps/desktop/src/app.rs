@@ -7,15 +7,31 @@ use slint::{ComponentHandle, PhysicalPosition, PhysicalSize};
 use std::cell::{Cell, RefCell};
 use std::sync::mpsc::{Receiver, TryRecvError};
 
-/// Panel an rechten Rand des Arbeitsbereichs (Monitor unter Cursor) docken.
-fn dock_right(panel: &PanelWindow, panel_width: u32) {
+/// Abstand der Dock-Leiste zum Bildschirmrand (logische Pixel).
+const DOCK_MARGIN: f32 = 8.0;
+
+/// Panel als schmale Dock-Leiste an den rechten Rand des Arbeitsbereichs
+/// (Monitor unter Cursor) setzen, vertikal zentriert.
+/// Groesse kommt aus dem Slint-Layout (`content-width`/`content-height`);
+/// `panel.width` aus der Config wird bewusst ignoriert (bleibt nur fuer
+/// alte config.toml-Dateien erhalten).
+fn dock_right(panel: &PanelWindow) {
     let Some((x, y, w, h, scale)) = crate::platform::work_area_for_cursor_monitor() else {
         return;
     };
-    let width = ((panel_width as f32 * scale).round() as i32).min(w).max(1);
+    let margin = (DOCK_MARGIN * scale).round() as i32;
+    let width = ((panel.get_content_width() * scale).round() as i32)
+        .min(w - margin)
+        .max(1);
+    let height = ((panel.get_content_height() * scale).round() as i32)
+        .min(h - 2 * margin)
+        .max(1);
     let window = panel.window();
-    window.set_size(PhysicalSize::new(width as u32, h.max(1) as u32));
-    window.set_position(PhysicalPosition::new(x + w - width, y));
+    window.set_size(PhysicalSize::new(width as u32, height as u32));
+    window.set_position(PhysicalPosition::new(
+        x + w - width - margin,
+        y + (h - height) / 2,
+    ));
 }
 
 thread_local! {
@@ -245,7 +261,7 @@ pub fn handle(cmd: Command, panel: &PanelWindow, config: &Config) {
             if let Some(h) = crate::selection::foreground_external() {
                 LAST_EXTERNAL.set(Some(h));
             }
-            dock_right(panel, config.panel.width);
+            dock_right(panel);
             let _ = panel.show();
             panel.invoke_focus_panel();
         }

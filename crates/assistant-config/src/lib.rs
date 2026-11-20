@@ -75,6 +75,8 @@ impl Default for HotkeyConfig {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PanelConfig {
+    /// Ignoriert: das Panel ist eine schmale Dock-Leiste mit fester Breite.
+    /// Feld bleibt, damit alte config.toml-Dateien weiter laden.
     pub width: u32,
     pub always_on_top: bool,
     pub preferred_monitor: Option<String>,
