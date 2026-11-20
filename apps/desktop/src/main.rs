@@ -1,5 +1,6 @@
 mod app;
 mod platform;
+mod single_instance;
 mod tray;
 
 use assistant_core::Command;
@@ -10,6 +11,11 @@ use tray_icon::{MouseButton, MouseButtonState, TrayIconEvent};
 slint::include_modules!();
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let single_rx = match single_instance::acquire() {
+        single_instance::Role::Primary(rx) => rx,
+        single_instance::Role::Secondary => return Ok(()),
+    };
+
     let panel = PanelWindow::new()?;
     // Schliessen versteckt nur das Fenster; Beenden nur ueber das Tray-Menue.
     panel
@@ -33,6 +39,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::time::Duration::from_millis(50),
         move || {
             let Some(panel) = weak.upgrade() else { return };
+            while let Ok(cmd) = single_rx.try_recv() {
+                app::handle(cmd, &panel);
+            }
             while let Ok(ev) = MenuEvent::receiver().try_recv() {
                 let cmd = if ev.id == tray.open_id {
                     Command::OpenPanel
