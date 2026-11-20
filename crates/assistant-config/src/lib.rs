@@ -8,6 +8,22 @@ use std::path::{Path, PathBuf};
 #[serde(default)]
 pub struct Config {
     pub panel: PanelConfig,
+    pub hotkeys: HotkeyConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct HotkeyConfig {
+    /// Global hotkey toggling the panel, e.g. "ctrl+alt+p".
+    pub toggle_panel: String,
+}
+
+impl Default for HotkeyConfig {
+    fn default() -> Self {
+        Self {
+            toggle_panel: "ctrl+alt+p".into(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -107,6 +123,22 @@ mod tests {
         assert!(c.panel.always_on_top);
         std::fs::write(&p, "").unwrap();
         assert_eq!(Config::load_from(&p), Config::default());
+    }
+
+    #[test]
+    fn old_file_without_hotkeys_loads() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("c.toml");
+        std::fs::write(
+            &p,
+            "[panel]
+width = 420
+",
+        )
+        .unwrap();
+        let c = Config::load_from(&p);
+        assert_eq!(c.hotkeys.toggle_panel, "ctrl+alt+p");
+        assert_eq!(c.panel.width, 420);
     }
 
     #[test]
