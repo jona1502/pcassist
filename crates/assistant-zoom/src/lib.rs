@@ -6,7 +6,12 @@
 //!   following is therefore only correct on the primary monitor; on other
 //!   monitors the view is clamped to the primary monitor's range.
 //! - The process should be per-monitor DPI aware, otherwise cursor and screen
-//!   coordinates are virtualized and offsets are off on scaled displays.
+//!   coordinates are virtualized and offsets are off on scaled displays. The
+//!   Slint/winit app is (thread DPI awareness context read at runtime: per
+//!   monitor v2), so `GetCursorPos` and `GetSystemMetrics` are physical pixels.
+//! - `GetCursorPos` under an active transform returns desktop coordinates, not
+//!   magnified-screen coordinates (verified: equals the position set with
+//!   `SetCursorPos`).
 //!
 //! Crash safety (best effort, honest summary):
 //! - `Drop` resets to 1.0 and calls `MagUninitialize`.
@@ -135,6 +140,24 @@ pub fn clamp_offset(cursor: i32, screen: i32, level: f32) -> i32 {
     want.clamp(0, max)
 }
 
+/// Offset on one axis that maps the pointer proportionally: pointer at the
+/// first pixel of the screen gives offset 0, pointer at the last pixel gives
+/// the maximum offset `screen - screen/level`, so every screen edge (taskbar,
+/// dock) is reachable. In between the offset is linear in `cursor`.
+///
+/// The magnified pointer position `(cursor - offset) * level` then equals the
+/// cursor position within `level` pixels, i.e. the pointer stays where the
+/// mouse physically is and the dock under it stays under it. Centering the
+/// view on the cursor instead made Windows deliver presses on the dock's
+/// stepper tiles to the window below (measured, see `follow_cursor`).
+pub fn proportional_offset(cursor: i32, screen: i32, level: f32) -> i32 {
+    let level = clamp_level(level);
+    let max = (screen as f32 - screen as f32 / level).floor().max(0.0);
+    let span = (screen - 1).max(1) as f32;
+    let t = (cursor as f32 / span).clamp(0.0, 1.0);
+    ((t * max).round() as i32).clamp(0, max as i32)
+}
+
 // ---- crash safety --------------------------------------------------------
 
 /// True between a successful `MagInitialize` and `MagUninitialize`.
@@ -208,13 +231,19 @@ impl Zoom {
         self.level
     }
 
-    /// Sets the level (clamped to 1.0..=8.0), keeping the view center where
-    /// it was.
+    /// Sets the level (clamped to 1.0..=8.0). The view follows the cursor
+    /// proportionally right away (no jump on the next tick); without a cursor
+    /// position the view center is kept where it was.
     pub fn set_level(&mut self, level: f32) -> Result<(), ZoomError> {
         let level = clamp_level(level);
         let (sw, sh) = screen_size();
         let (x, y) = if level <= MIN_LEVEL {
             (0, 0)
+        } else if let Some(pt) = cursor_pos() {
+            (
+                proportional_offset(pt.x, sw, level),
+                proportional_offset(pt.y, sh, level),
+            )
         } else {
             let cx = self.offset.0 + (sw as f32 / self.level / 2.0) as i32;
             let cy = self.offset.1 + (sh as f32 / self.level / 2.0) as i32;
@@ -240,20 +269,26 @@ impl Zoom {
         self.apply(1.0, 0, 0)
     }
 
-    /// Centers the view on the cursor (clamped to the primary screen).
-    /// No-op at level 1.0 or when the offset would not change.
+    /// Moves the view proportionally to the cursor (see `proportional_offset`),
+    /// so all screen edges stay reachable and clicks hit the window under the
+    /// pointer. No-op at level 1.0 or when the offset would not change.
+    ///
+    /// Why not "center on the cursor": measured on Windows 11 (2560x1440,
+    /// 100 % scaling) with injected mouse input, a press while zoomed at 2x was
+    /// not delivered to the always-on-top dock for most view offsets (the
+    /// window below got and activated it); with proportional offsets every
+    /// press reached the dock. Microsoft documents neither behaviour, and real
+    /// hardware input was not tested.
     pub fn follow_cursor(&mut self) -> Result<(), ZoomError> {
         if self.level <= MIN_LEVEL {
             return Ok(());
         }
-        let mut pt = POINT { x: 0, y: 0 };
-        // SAFETY: `pt` is a valid out pointer.
-        if unsafe { GetCursorPos(&mut pt) } == 0 {
+        let Some(pt) = cursor_pos() else {
             return Ok(());
-        }
+        };
         let (sw, sh) = screen_size();
-        let x = clamp_offset(pt.x, sw, self.level);
-        let y = clamp_offset(pt.y, sh, self.level);
+        let x = proportional_offset(pt.x, sw, self.level);
+        let y = proportional_offset(pt.y, sh, self.level);
         if (x, y) == self.offset {
             return Ok(());
         }
@@ -280,6 +315,12 @@ impl Drop for Zoom {
             MagUninitialize();
         }
     }
+}
+
+fn cursor_pos() -> Option<POINT> {
+    let mut pt = POINT { x: 0, y: 0 };
+    // SAFETY: `pt` is a valid out pointer.
+    (unsafe { GetCursorPos(&mut pt) } != 0).then_some(pt)
 }
 
 /// Primary monitor size in pixels.
@@ -380,6 +421,66 @@ mod tests {
     fn offset_at_level_one_is_zero() {
         assert_eq!(clamp_offset(500, 1080, 1.0), 0);
         assert_eq!(clamp_offset(500, 1080, 0.1), 0);
+    }
+
+    #[test]
+    fn proportional_reaches_every_edge() {
+        // 2560x1440: pointer on the last row shows the taskbar, last column
+        // the dock at the right edge, first row/column the top/left edge.
+        for l in [1.1f32, 1.5, 2.0, 3.0, 8.0] {
+            let (w, h) = (2560, 1440);
+            let (mx, my) = (
+                (w as f32 - w as f32 / l).floor() as i32,
+                (h as f32 - h as f32 / l).floor() as i32,
+            );
+            assert_eq!(proportional_offset(0, w, l), 0);
+            assert_eq!(proportional_offset(0, h, l), 0);
+            assert_eq!(proportional_offset(w - 1, w, l), mx);
+            // view bottom at the last offset reaches the screen bottom
+            assert!(proportional_offset(h - 1, h, l) + (h as f32 / l).ceil() as i32 >= h);
+            assert_eq!(proportional_offset(h - 1, h, l), my);
+        }
+    }
+
+    #[test]
+    fn proportional_is_monotonic_and_clamps() {
+        let mut prev = 0;
+        for c in -50..1500 {
+            let o = proportional_offset(c, 1440, 3.0);
+            assert!(o >= prev);
+            assert!((0..=960).contains(&o));
+            prev = o;
+        }
+        assert_eq!(proportional_offset(-10, 1440, 3.0), 0);
+        assert_eq!(proportional_offset(9999, 1440, 3.0), 960);
+        assert_eq!(proportional_offset(700, 1440, 1.0), 0);
+    }
+
+    #[test]
+    fn proportional_keeps_pointer_on_screen_and_in_place() {
+        // The magnified pointer position stays on screen for every cursor
+        // position and within two desktop pixels (`2 * level` screen pixels)
+        // of the real position.
+        for l in [1.5f32, 2.0, 4.0, 8.0] {
+            for c in 0..1440 {
+                let o = proportional_offset(c, 1440, l);
+                let shown = (c - o) as f32 * l;
+                assert!((0.0..1440.0).contains(&shown), "l={l} c={c} shown={shown}");
+                assert!(
+                    (shown - c as f32).abs() <= 2.0 * l,
+                    "l={l} c={c} shown={shown}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn dock_row_stays_clickable_position() {
+        // Dock stepper row at y=395 on 1440 px, 2x: the view offset must keep
+        // the row inside the visible part and the shown position near 395.
+        let o = proportional_offset(395, 1440, 2.0);
+        let shown = (395 - o) as f32 * 2.0;
+        assert!((shown - 395.0).abs() <= 4.0);
     }
 
     #[test]
