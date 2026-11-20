@@ -16,12 +16,21 @@ pub struct Config {
 pub struct HotkeyConfig {
     /// Global hotkey toggling the panel, e.g. "ctrl+alt+p".
     pub toggle_panel: String,
+    /// Zoom in one step, e.g. "ctrl+alt+Equal".
+    pub zoom_in: String,
+    /// Zoom out one step, e.g. "ctrl+alt+Minus".
+    pub zoom_out: String,
+    /// Reset zoom to 100 %, e.g. "ctrl+alt+0".
+    pub zoom_reset: String,
 }
 
 impl Default for HotkeyConfig {
     fn default() -> Self {
         Self {
             toggle_panel: "ctrl+alt+p".into(),
+            zoom_in: "ctrl+alt+Equal".into(),
+            zoom_out: "ctrl+alt+Minus".into(),
+            zoom_reset: "ctrl+alt+0".into(),
         }
     }
 }
@@ -138,6 +147,9 @@ width = 420
         .unwrap();
         let c = Config::load_from(&p);
         assert_eq!(c.hotkeys.toggle_panel, "ctrl+alt+p");
+        assert_eq!(c.hotkeys.zoom_in, "ctrl+alt+Equal");
+        assert_eq!(c.hotkeys.zoom_out, "ctrl+alt+Minus");
+        assert_eq!(c.hotkeys.zoom_reset, "ctrl+alt+0");
         assert_eq!(c.panel.width, 420);
     }
 

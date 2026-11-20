@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 assistant-config = { path = "../../crates/assistant-config" }
 assistant-core = { path = "../../crates/assistant-core" }
+assistant-zoom = { path = "../../crates/assistant-zoom" }
 global-hotkey = "0.10.0"
 slint = "1.19.0"
 tray-icon = "0.26.1"
