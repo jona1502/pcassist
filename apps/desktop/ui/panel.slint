@@ -56,6 +56,27 @@ export component PanelWindow inherits Window {
                     description: "Bildschirmzoom umschalten";
                     clicked => { root.action-triggered("zoom"); }
                 }
+                HorizontalLayout {
+                    spacing: 8px;
+                    QuickAction {
+                        text: "+";
+                        accessible-label: "Vergrößern";
+                        description: "Bildschirmzoom um eine Stufe vergrößern";
+                        clicked => { root.action-triggered("zoom-in"); }
+                    }
+                    QuickAction {
+                        text: "−";
+                        accessible-label: "Verkleinern";
+                        description: "Bildschirmzoom um eine Stufe verkleinern";
+                        clicked => { root.action-triggered("zoom-out"); }
+                    }
+                    QuickAction {
+                        text: "Reset";
+                        accessible-label: "Zoom zurücksetzen";
+                        description: "Bildschirmzoom auf 100 Prozent zurücksetzen";
+                        clicked => { root.action-triggered("zoom-reset"); }
+                    }
+                }
                 QuickAction {
                     text: "Vorlesen";
                     description: "Vorlesen umschalten";

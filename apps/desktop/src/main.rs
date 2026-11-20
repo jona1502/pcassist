@@ -39,6 +39,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     panel.on_action_triggered(move |id| {
         let cmd = match id.as_str() {
             "zoom" => Command::ToggleFeature(Feature::Zoom),
+            "zoom-in" => Command::ZoomIn,
+            "zoom-out" => Command::ZoomOut,
+            "zoom-reset" => Command::ZoomReset,
             "tts" => Command::ToggleFeature(Feature::Tts),
             "mic" => Command::ToggleFeature(Feature::Mic),
             "contrast" => Command::ToggleFeature(Feature::Contrast),
@@ -54,7 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tray = tray::create()?;
 
     // Manager must stay alive for the hotkey to remain registered.
-    let hotkey = hotkey::register(&config.hotkeys.toggle_panel);
+    let hotkey = hotkey::register(&config.hotkeys);
 
     let weak = panel.as_weak();
     let timer = slint::Timer::default();
@@ -80,10 +83,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 app::handle(cmd, &panel, &config);
             }
             while let Ok(ev) = GlobalHotKeyEvent::receiver().try_recv() {
-                if ev.state == HotKeyState::Pressed
-                    && hotkey.as_ref().is_some_and(|(_, id)| *id == ev.id)
-                {
-                    app::handle(Command::TogglePanel, &panel, &config);
+                if ev.state != HotKeyState::Pressed {
+                    continue;
+                }
+                if let Some(cmd) = hotkey.command_for(ev.id) {
+                    app::handle(cmd, &panel, &config);
                 }
             }
             while let Ok(ev) = TrayIconEvent::receiver().try_recv() {
