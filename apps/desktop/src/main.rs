@@ -1,6 +1,8 @@
 mod app;
 mod hotkey;
 mod platform;
+#[allow(dead_code)] // wired up in the next commit
+mod selection;
 mod single_instance;
 mod tray;
 
