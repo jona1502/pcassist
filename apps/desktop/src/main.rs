@@ -1,4 +1,5 @@
 mod app;
+mod platform;
 mod tray;
 
 use assistant_core::Command;
@@ -14,6 +15,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     panel
         .window()
         .on_close_requested(|| slint::CloseRequestResponse::HideWindow);
+
+    let weak_close = panel.as_weak();
+    panel.on_close_requested(move || {
+        if let Some(p) = weak_close.upgrade() {
+            app::handle(Command::ClosePanel, &p);
+        }
+    });
 
     // Tray nach Backend-Init (PanelWindow) erstellen und am Leben halten.
     let tray = tray::create()?;

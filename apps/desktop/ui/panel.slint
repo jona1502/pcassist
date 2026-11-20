@@ -1,13 +1,47 @@
+import { Button } from "std-widgets.slint";
+
 export component PanelWindow inherits Window {
     width: 360px;
     height: 600px;
     title: "PC Assistant";
+    no-frame: true;
+    always-on-top: true;
+    forward-focus: keys;
 
-    VerticalLayout {
-        padding: 16px;
-        Text {
-            text: "PC Assistant";
-            font-size: 24px;
+    callback close-requested();
+
+    keys := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Escape) {
+                root.close-requested();
+                return accept;
+            }
+            reject
+        }
+
+        VerticalLayout {
+            padding: 16px;
+            spacing: 12px;
+            accessible-role: none;
+
+            HorizontalLayout {
+                Text {
+                    text: "PC Assistant";
+                    font-size: 24px;
+                    vertical-alignment: center;
+                    accessible-role: text;
+                    accessible-label: "PC Assistant";
+                }
+                Rectangle { }
+                Button {
+                    text: "Schließen";
+                    accessible-label: "Schließen";
+                    clicked => { root.close-requested(); }
+                }
+            }
+            Rectangle { }
         }
     }
+
+    init => { keys.focus(); }
 }
