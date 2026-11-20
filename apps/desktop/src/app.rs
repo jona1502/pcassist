@@ -27,6 +27,8 @@ thread_local! {
     /// Running selection capture (worker thread result).
     static CAPTURE: RefCell<Option<Receiver<Option<String>>>> = const { RefCell::new(None) };
     static PAUSED: Cell<bool> = const { Cell::new(false) };
+    /// Foreground window (HWND) of another process before the panel opened.
+    static LAST_EXTERNAL: Cell<Option<isize>> = const { Cell::new(None) };
 }
 
 const ZOOM_UNAVAILABLE: &str = "Zoom nicht verfügbar";
@@ -101,7 +103,14 @@ fn speak_selection() -> Option<String> {
     if CAPTURE.with_borrow(Option::is_some) {
         return None;
     }
-    CAPTURE.with_borrow_mut(|c| *c = Some(crate::selection::capture_async()));
+    // Panel button: our panel is foreground, so Ctrl+C must go to the window
+    // that was focused before the panel opened. Hotkey: external app already is.
+    let restore = if crate::selection::own_window_is_foreground() {
+        LAST_EXTERNAL.get()
+    } else {
+        None
+    };
+    CAPTURE.with_borrow_mut(|c| *c = Some(crate::selection::capture_async(restore)));
     Some("Text wird gelesen…".into())
 }
 
@@ -194,6 +203,9 @@ fn toggle_feature(f: Feature) -> String {
 pub fn handle(cmd: Command, panel: &PanelWindow, config: &Config) {
     match cmd {
         Command::OpenPanel => {
+            if let Some(h) = crate::selection::foreground_external() {
+                LAST_EXTERNAL.set(Some(h));
+            }
             dock_right(panel, config.panel.width);
             let _ = panel.show();
             panel.invoke_focus_panel();
