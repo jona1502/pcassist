@@ -4,7 +4,7 @@ mod single_instance;
 mod tray;
 
 use assistant_config::Config;
-use assistant_core::Command;
+use assistant_core::{Command, Feature};
 use slint::ComponentHandle;
 use tray_icon::menu::MenuEvent;
 use tray_icon::{MouseButton, MouseButtonState, TrayIconEvent};
@@ -29,6 +29,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     panel.on_close_requested(move || {
         if let Some(p) = weak_close.upgrade() {
             app::handle(Command::ClosePanel, &p, &close_config);
+        }
+    });
+
+    let weak_action = panel.as_weak();
+    let action_config = config.clone();
+    panel.on_action_triggered(move |id| {
+        let cmd = match id.as_str() {
+            "zoom" => Command::ToggleFeature(Feature::Zoom),
+            "tts" => Command::ToggleFeature(Feature::Tts),
+            "mic" => Command::ToggleFeature(Feature::Mic),
+            "contrast" => Command::ToggleFeature(Feature::Contrast),
+            "settings" => Command::OpenSettings,
+            _ => return,
+        };
+        if let Some(p) = weak_action.upgrade() {
+            app::handle(cmd, &p, &action_config);
         }
     });
 
