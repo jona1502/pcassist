@@ -267,6 +267,12 @@ dependencies = [
 [[package]]
 name = "assistant-config"
 version = "0.1.0"
+dependencies = [
+ "dirs",
+ "serde",
+ "tempfile",
+ "toml 0.8.2",
+]
 
 [[package]]
 name = "assistant-core"
