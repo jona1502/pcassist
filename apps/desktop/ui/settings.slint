@@ -1,0 +1,432 @@
+// Einstellungen: normales Fenster mit Seitenleiste (Bereiche) und Inhalt.
+// Die Werte werden von Rust gesetzt (`settings.rs`); "Speichern" liest sie zurueck.
+
+import { Button, CheckBox, ComboBox, LineEdit, Palette, ScrollView, Slider } from "std-widgets.slint";
+
+global Ui {
+    out property <color> ring: Palette.color-scheme == ColorScheme.dark ? #ffd23f : #0b57d0;
+    out property <color> error: Palette.color-scheme == ColorScheme.dark ? #ff8a80 : #b3261e;
+    out property <length> target: 48px;
+    out property <length> body: 16px;
+}
+
+// Eintrag der Seitenleiste. Pfeil hoch/runter wechselt den Bereich.
+component NavItem inherits Rectangle {
+    in property <string> label;
+    in property <bool> selected;
+    callback activated();
+    callback move(int);
+    public function focus-item() {
+        fs.focus();
+    }
+
+    min-height: Ui.target;
+    border-radius: 8px;
+    background: root.selected ? Palette.accent-background.with-alpha(0.3) : (touch.has-hover ? Palette.foreground.with-alpha(0.08) : transparent);
+    border-width: fs.has-focus ? 3px : 0px;
+    border-color: Ui.ring;
+    accessible-role: tab;
+    accessible-label: root.label;
+    accessible-checkable: true;
+    accessible-checked: root.selected;
+    accessible-action-default => {
+        root.activated();
+    }
+
+    Text {
+        x: 14px;
+        width: parent.width - 28px;
+        text: root.label;
+        color: Palette.foreground;
+        font-size: Ui.body;
+        font-weight: root.selected ? 700 : 400;
+        vertical-alignment: center;
+    }
+
+    touch := TouchArea {
+        clicked => {
+            fs.focus();
+            root.activated();
+        }
+    }
+
+    fs := FocusScope {
+        key-pressed(event) => {
+            if (event.text == " " || event.text == Key.Return) {
+                root.activated();
+                return accept;
+            }
+            if (event.text == Key.UpArrow) {
+                root.move(-1);
+                return accept;
+            }
+            if (event.text == Key.DownArrow) {
+                root.move(1);
+                return accept;
+            }
+            reject
+        }
+    }
+}
+
+// Auswahlknopf einer Gruppe (z. B. 100 / 50 / 10 %).
+component Segment inherits Rectangle {
+    in property <string> label;
+    in property <string> a11y-label;
+    in property <bool> selected;
+    callback activated();
+
+    min-width: 96px;
+    min-height: Ui.target;
+    border-radius: 8px;
+    border-width: fs.has-focus ? 3px : 1px;
+    border-color: fs.has-focus ? Ui.ring : Palette.border;
+    background: root.selected ? Palette.accent-background : (touch.has-hover ? Palette.foreground.with-alpha(0.08) : Palette.control-background);
+    accessible-role: radio-button;
+    accessible-label: root.a11y-label;
+    accessible-checkable: true;
+    accessible-checked: root.selected;
+    accessible-action-default => {
+        root.activated();
+    }
+
+    Text {
+        text: root.label;
+        color: root.selected ? Palette.accent-foreground : Palette.foreground;
+        font-size: Ui.body;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    touch := TouchArea {
+        clicked => {
+            fs.focus();
+            root.activated();
+        }
+    }
+
+    fs := FocusScope {
+        key-pressed(event) => {
+            if (event.text == " " || event.text == Key.Return) {
+                root.activated();
+                return accept;
+            }
+            reject
+        }
+    }
+}
+
+component SectionTitle inherits Text {
+    color: Palette.foreground;
+    font-size: 22px;
+    font-weight: 700;
+    accessible-role: text;
+}
+
+component Label inherits Text {
+    color: Palette.foreground;
+    font-size: Ui.body;
+    wrap: word-wrap;
+    accessible-role: text;
+}
+
+component Hint inherits Text {
+    color: Palette.foreground.with-alpha(0.7);
+    font-size: 14px;
+    wrap: word-wrap;
+    accessible-role: text;
+}
+
+// Zeile fuer ein Tastenkuerzel; "Ungueltig" kommt aus der Rust-Pruefung.
+component HotkeyRow inherits HorizontalLayout {
+    in property <string> label;
+    in-out property <string> value;
+    pure callback validate(string) -> bool;
+    property <bool> invalid: !root.validate(root.value);
+
+    spacing: 12px;
+    Label {
+        text: root.label;
+        width: 190px;
+        vertical-alignment: center;
+    }
+    LineEdit {
+        text <=> root.value;
+        min-height: Ui.target;
+        accessible-label: root.label + ", Tastenkürzel";
+        accessible-description: root.invalid ? "Ungültig" : "Format zum Beispiel ctrl+alt+p";
+    }
+    Text {
+        text: root.invalid ? "Ungültig" : "";
+        width: 70px;
+        color: Ui.error;
+        font-size: 14px;
+        font-weight: 700;
+        vertical-alignment: center;
+        accessible-role: text;
+    }
+}
+
+export component SettingsWindow inherits Window {
+    title: "PC Assistant – Einstellungen";
+    preferred-width: 720px;
+    preferred-height: 560px;
+    min-width: 600px;
+    min-height: 480px;
+    always-on-top: false;
+    background: Palette.background;
+    forward-focus: keys;
+
+    callback save();
+    callback close-requested();
+    callback test-speak();
+    pure callback validate-hotkey(string) -> bool;
+
+    // 0 Zoom, 1 Vorlesen, 2 Audio, 3 Tastenkuerzel, 4 Panel
+    in-out property <int> section: 0;
+    in-out property <int> zoom-step: 100;
+    in-out property <float> tts-rate: 0;
+    // Erster Eintrag ist "Standardgerät".
+    in property <[string]> input-devices;
+    in property <[string]> output-devices;
+    in-out property <string> input-device;
+    in-out property <string> output-device;
+    in-out property <string> hk-toggle;
+    in-out property <string> hk-zoom-in;
+    in-out property <string> hk-zoom-out;
+    in-out property <string> hk-zoom-reset;
+    in-out property <string> hk-speak;
+    in-out property <string> hk-stop;
+    in-out property <bool> always-on-top-setting: true;
+    in property <string> output-note;
+    in property <string> status-text;
+
+    function select(i: int) {
+        root.section = i;
+    }
+    function move(from: int, delta: int) {
+        let to = Math.max(0, Math.min(4, from + delta));
+        root.section = to;
+        if (to == 0) {
+            n0.focus-item();
+        } else if (to == 1) {
+            n1.focus-item();
+        } else if (to == 2) {
+            n2.focus-item();
+        } else if (to == 3) {
+            n3.focus-item();
+        } else {
+            n4.focus-item();
+        }
+    }
+    public function focus-window() {
+        n0.focus-item();
+    }
+
+    keys := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Escape) {
+                root.close-requested();
+                return accept;
+            }
+            reject
+        }
+
+        VerticalLayout {
+            HorizontalLayout {
+                Rectangle {
+                    width: 200px;
+                    background: Palette.alternate-background;
+                    accessible-role: tab-list;
+                    accessible-label: "Bereiche";
+
+                    VerticalLayout {
+                        padding: 12px;
+                        spacing: 6px;
+                        alignment: start;
+                        n0 := NavItem {
+                            label: "Zoom";
+                            selected: root.section == 0;
+                            activated => { root.select(0); }
+                            move(d) => { root.move(0, d); }
+                        }
+                        n1 := NavItem {
+                            label: "Vorlesen";
+                            selected: root.section == 1;
+                            activated => { root.select(1); }
+                            move(d) => { root.move(1, d); }
+                        }
+                        n2 := NavItem {
+                            label: "Audio / Mikrofon";
+                            selected: root.section == 2;
+                            activated => { root.select(2); }
+                            move(d) => { root.move(2, d); }
+                        }
+                        n3 := NavItem {
+                            label: "Tastenkürzel";
+                            selected: root.section == 3;
+                            activated => { root.select(3); }
+                            move(d) => { root.move(3, d); }
+                        }
+                        n4 := NavItem {
+                            label: "Panel";
+                            selected: root.section == 4;
+                            activated => { root.select(4); }
+                            move(d) => { root.move(4, d); }
+                        }
+                    }
+                }
+
+                ScrollView {
+                    VerticalLayout {
+                        padding: 24px;
+                        spacing: 16px;
+                        alignment: start;
+
+                        if root.section == 0: VerticalLayout {
+                            spacing: 16px;
+                            SectionTitle { text: "Zoom"; }
+                            Label { text: "Schrittweite für Vergrößern und Verkleinern"; }
+                            HorizontalLayout {
+                                spacing: 8px;
+                                alignment: start;
+                                Segment {
+                                    label: "100 %";
+                                    a11y-label: "Schrittweite 100 Prozent";
+                                    selected: root.zoom-step == 100;
+                                    activated => { root.zoom-step = 100; }
+                                }
+                                Segment {
+                                    label: "50 %";
+                                    a11y-label: "Schrittweite 50 Prozent";
+                                    selected: root.zoom-step == 50;
+                                    activated => { root.zoom-step = 50; }
+                                }
+                                Segment {
+                                    label: "10 %";
+                                    a11y-label: "Schrittweite 10 Prozent";
+                                    selected: root.zoom-step == 10;
+                                    activated => { root.zoom-step = 10; }
+                                }
+                            }
+                        }
+
+                        if root.section == 1: VerticalLayout {
+                            spacing: 16px;
+                            SectionTitle { text: "Vorlesen"; }
+                            Label { text: "Geschwindigkeit: " + Math.round(root.tts-rate); }
+                            Slider {
+                                minimum: -10;
+                                maximum: 10;
+                                step: 1;
+                                value <=> root.tts-rate;
+                                min-height: Ui.target;
+                                accessible-label: "Geschwindigkeit";
+                                accessible-description: "Minus 10 bis 10, 0 ist normal";
+                            }
+                            Label { text: "Ausgabegerät"; }
+                            ComboBox {
+                                model: root.output-devices;
+                                current-value <=> root.output-device;
+                                min-height: Ui.target;
+                                accessible-label: "Ausgabegerät";
+                            }
+                            Hint { text: root.output-note; }
+                            HorizontalLayout {
+                                alignment: start;
+                                Button {
+                                    text: "Test sprechen";
+                                    min-height: Ui.target;
+                                    min-width: 160px;
+                                    accessible-description: "Spricht: Dies ist ein Test";
+                                    clicked => { root.test-speak(); }
+                                }
+                            }
+                        }
+
+                        if root.section == 2: VerticalLayout {
+                            spacing: 16px;
+                            SectionTitle { text: "Audio / Mikrofon"; }
+                            Label { text: "Eingabegerät (Mikrofon)"; }
+                            ComboBox {
+                                model: root.input-devices;
+                                current-value <=> root.input-device;
+                                min-height: Ui.target;
+                                accessible-label: "Eingabegerät";
+                            }
+                            Hint { text: "Für die Sprachsteuerung, folgt."; }
+                            Label { text: "Ausgabegerät (gleiche Einstellung wie bei Vorlesen)"; }
+                            ComboBox {
+                                model: root.output-devices;
+                                current-value <=> root.output-device;
+                                min-height: Ui.target;
+                                accessible-label: "Ausgabegerät";
+                            }
+                            Hint { text: root.output-note; }
+                        }
+
+                        if root.section == 3: VerticalLayout {
+                            spacing: 10px;
+                            SectionTitle { text: "Tastenkürzel"; }
+                            Hint { text: "Format zum Beispiel ctrl+alt+p. Ungültige Eingaben werden nicht gespeichert. Änderungen gelten sofort nach Speichern."; }
+                            HotkeyRow { label: "Panel ein/aus"; value <=> root.hk-toggle; validate(s) => { return root.validate-hotkey(s); } }
+                            HotkeyRow { label: "Zoom vergrößern"; value <=> root.hk-zoom-in; validate(s) => { return root.validate-hotkey(s); } }
+                            HotkeyRow { label: "Zoom verkleinern"; value <=> root.hk-zoom-out; validate(s) => { return root.validate-hotkey(s); } }
+                            HotkeyRow { label: "Zoom zurücksetzen"; value <=> root.hk-zoom-reset; validate(s) => { return root.validate-hotkey(s); } }
+                            HotkeyRow { label: "Vorlesen starten"; value <=> root.hk-speak; validate(s) => { return root.validate-hotkey(s); } }
+                            HotkeyRow { label: "Vorlesen stoppen"; value <=> root.hk-stop; validate(s) => { return root.validate-hotkey(s); } }
+                        }
+
+                        if root.section == 4: VerticalLayout {
+                            spacing: 16px;
+                            SectionTitle { text: "Panel"; }
+                            CheckBox {
+                                text: "Immer im Vordergrund";
+                                checked <=> root.always-on-top-setting;
+                                min-height: Ui.target;
+                                accessible-description: "Die Dock-Leiste bleibt über anderen Fenstern";
+                            }
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                height: 1px;
+                background: Palette.border;
+            }
+            HorizontalLayout {
+                padding: 12px;
+                spacing: 12px;
+                Text {
+                    text: root.status-text;
+                    color: Palette.foreground;
+                    font-size: 14px;
+                    wrap: word-wrap;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    accessible-role: text;
+                    accessible-label: root.status-text;
+                }
+                Button {
+                    text: "Speichern";
+                    primary: true;
+                    min-height: Ui.target;
+                    min-width: 120px;
+                    clicked => { root.save(); }
+                }
+                Button {
+                    text: "Schließen";
+                    min-height: Ui.target;
+                    min-width: 120px;
+                    clicked => { root.close-requested(); }
+                }
+            }
+        }
+    }
+
+    init => {
+        n0.focus-item();
+    }
+}

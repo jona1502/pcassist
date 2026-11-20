@@ -11,6 +11,17 @@ pub struct Config {
     pub hotkeys: HotkeyConfig,
     pub tts: TtsConfig,
     pub zoom: ZoomConfig,
+    pub audio: AudioConfig,
+}
+
+/// Audio devices by name; `None` = system default.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AudioConfig {
+    /// Microphone, reserved for the future voice control.
+    pub input_device: Option<String>,
+    /// Speech output device.
+    pub output_device: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -256,5 +267,33 @@ step = -5
         )
         .unwrap();
         assert_eq!(Config::load_from(&p).zoom.step, 100);
+    }
+
+    #[test]
+    fn old_file_without_audio_loads() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("c.toml");
+        std::fs::write(
+            &p,
+            "[tts]
+rate = 2
+",
+        )
+        .unwrap();
+        let c = Config::load_from(&p);
+        assert_eq!(c.audio, AudioConfig::default());
+        assert_eq!(c.audio.input_device, None);
+        assert_eq!(c.audio.output_device, None);
+    }
+
+    #[test]
+    fn audio_roundtrip() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("c.toml");
+        let mut c = Config::default();
+        c.audio.input_device = Some("Mikrofon (USB)".into());
+        c.audio.output_device = Some("Lautsprecher".into());
+        c.save_to(&p).unwrap();
+        assert_eq!(Config::load_from(&p), c);
     }
 }

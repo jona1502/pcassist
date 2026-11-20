@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+assistant-audio = { path = "../../crates/assistant-audio" }
 assistant-config = { path = "../../crates/assistant-config" }
 assistant-core = { path = "../../crates/assistant-core" }
 assistant-tts = { path = "../../crates/assistant-tts" }

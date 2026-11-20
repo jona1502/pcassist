@@ -41,6 +41,10 @@ thread_local! {
     static ZOOM: RefCell<Option<Zoom>> = const { RefCell::new(None) };
     /// Lazily created on first speech; dropped in `shutdown`.
     static TTS: RefCell<Option<Tts>> = const { RefCell::new(None) };
+    /// Current speech rate (-10..=10); applied to a lazily created `Tts` and live.
+    static TTS_RATE: Cell<i32> = const { Cell::new(0) };
+    /// Wanted speech output device (`None` = system default).
+    static TTS_OUTPUT: RefCell<Option<String>> = const { RefCell::new(None) };
     /// Running selection capture (worker thread result).
     static CAPTURE: RefCell<Option<Receiver<Option<String>>>> = const { RefCell::new(None) };
     static PAUSED: Cell<bool> = const { Cell::new(false) };
@@ -55,10 +59,62 @@ fn zoom_step() -> assistant_zoom::ZoomStep {
     ZOOM_STEP.get()
 }
 
-/// Applies the configured zoom step (invalid values fall back to 100 %).
-pub fn init_zoom_step(config: &Config) {
+/// Applies the configured zoom step (invalid values fall back to 100 %) and
+/// the speech rate.
+pub fn init_runtime(config: &Config) {
     let step = assistant_zoom::ZoomStep::from_percent(config.zoom.step).unwrap_or_default();
     ZOOM_STEP.set(step);
+    TTS_RATE.set(assistant_tts::clamp_rate(config.tts.rate));
+    TTS_OUTPUT.with_borrow_mut(|o| o.clone_from(&config.audio.output_device));
+}
+
+/// Applies a saved config to the running app: zoom step, speech rate and the
+/// dock's always-on-top flag.
+pub fn apply_config(config: &Config, panel: &PanelWindow) {
+    init_runtime(config);
+    sync_zoom(panel);
+    panel.set_keep_on_top(config.panel.always_on_top);
+    set_tts_rate(config.tts.rate);
+    set_tts_output(config.audio.output_device.as_deref());
+}
+
+/// Sets the speech rate, also on a running `Tts`.
+pub fn set_tts_rate(rate: i32) {
+    let rate = assistant_tts::clamp_rate(rate);
+    TTS_RATE.set(rate);
+    TTS.with_borrow(|t| {
+        if let Some(t) = t {
+            t.set_rate(rate);
+        }
+    });
+}
+
+/// Routes speech to the named output device (`None` = default), also on a
+/// running `Tts`. Unknown devices silently fall back inside the TTS worker.
+pub fn set_tts_output(name: Option<&str>) {
+    let changed = TTS_OUTPUT.with_borrow_mut(|o| {
+        let changed = o.as_deref() != name;
+        *o = name.map(str::to_owned);
+        changed
+    });
+    if changed {
+        TTS.with_borrow(|t| {
+            if let Some(t) = t {
+                t.set_output_device(name);
+            }
+        });
+    }
+}
+
+/// Speaks a short test sentence with `rate` on `output` (not persisted).
+pub fn speak_test(rate: i32, output: Option<&str>) -> bool {
+    let rate = assistant_tts::clamp_rate(rate);
+    set_tts_output(output);
+    with_tts(|t| {
+        t.set_rate(rate);
+        t.speak("Dies ist ein Test");
+    })
+    .is_some()
 }
 
 /// Pushes current zoom percent and step to the panel.
@@ -69,7 +125,7 @@ pub fn sync_zoom(panel: &PanelWindow) {
 }
 
 /// User picked a step size: remember, persist, update the panel.
-pub fn select_zoom_step(percent: i32, panel: &PanelWindow, config: &Config) {
+pub fn select_zoom_step(percent: i32, panel: &PanelWindow) {
     let Some(step) = u32::try_from(percent)
         .ok()
         .and_then(assistant_zoom::ZoomStep::from_percent)
@@ -78,15 +134,17 @@ pub fn select_zoom_step(percent: i32, panel: &PanelWindow, config: &Config) {
     };
     ZOOM_STEP.set(step);
     sync_zoom(panel);
-    if let Err(e) = config_with_step(config).save() {
-        eprintln!("config save failed: {e}");
-    }
+    persist_current();
 }
 
-fn config_with_step(config: &Config) -> Config {
-    let mut c = config.clone();
+/// Saves the current config including the live zoom step.
+fn persist_current() {
+    let mut c = crate::settings::current();
     c.zoom.step = zoom_step().percent();
-    c
+    crate::settings::set_current(c.clone());
+    if let Err(e) = c.save() {
+        eprintln!("config save failed: {e}");
+    }
 }
 
 fn zoom_status(level: f32) -> String {
@@ -131,12 +189,17 @@ const TTS_NO_SELECTION: &str = "Kein Text markiert oder App unterstützt Kopiere
 const TTS_RUNNING: &str = "Vorlesen läuft";
 
 /// Runs `f` on the lazily created `Tts`; `None` if unavailable.
-fn with_tts<R>(rate: i32, f: impl FnOnce(&Tts) -> R) -> Option<R> {
+fn with_tts<R>(f: impl FnOnce(&Tts) -> R) -> Option<R> {
     TTS.with_borrow_mut(|slot| {
         if slot.is_none() {
             match Tts::new() {
                 Ok(t) => {
-                    t.set_rate(rate);
+                    t.set_rate(TTS_RATE.get());
+                    TTS_OUTPUT.with_borrow(|o| {
+                        if o.is_some() {
+                            t.set_output_device(o.as_deref());
+                        }
+                    });
                     *slot = Some(t);
                 }
                 Err(e) => {
@@ -169,12 +232,12 @@ fn speak_selection() -> Option<String> {
     Some("Text wird gelesen…".into())
 }
 
-fn speak_pause(rate: i32) -> Option<&'static str> {
+fn speak_pause() -> Option<&'static str> {
     if !is_speaking() {
         return None;
     }
     let paused = !PAUSED.get();
-    if with_tts(rate, |t| if paused { t.pause() } else { t.resume() }).is_none() {
+    if with_tts(|t| if paused { t.pause() } else { t.resume() }).is_none() {
         return Some(TTS_UNAVAILABLE);
     }
     PAUSED.set(paused);
@@ -196,7 +259,7 @@ fn speak_stop() -> &'static str {
 }
 
 /// Called from the 50 ms timer: finished selection capture, zoom follow.
-pub fn tick(panel: &PanelWindow, config: &Config) {
+pub fn tick(panel: &PanelWindow) {
     let done = CAPTURE.with_borrow_mut(|slot| {
         let res = match slot.as_ref()?.try_recv() {
             Ok(text) => text,
@@ -210,7 +273,7 @@ pub fn tick(panel: &PanelWindow, config: &Config) {
         let msg = match text {
             Some(t) => {
                 PAUSED.set(false);
-                match with_tts(config.tts.rate, |tts| tts.speak(&t)) {
+                match with_tts(|tts| tts.speak(&t)) {
                     Some(()) => TTS_RUNNING,
                     None => TTS_UNAVAILABLE,
                 }
@@ -255,7 +318,7 @@ fn toggle_feature(f: Feature) -> String {
     format!("{name}: {on} (Platzhalter)")
 }
 
-pub fn handle(cmd: Command, panel: &PanelWindow, config: &Config) {
+pub fn handle(cmd: Command, panel: &PanelWindow) {
     match cmd {
         Command::OpenPanel => {
             if let Some(h) = crate::selection::foreground_external() {
@@ -274,11 +337,9 @@ pub fn handle(cmd: Command, panel: &PanelWindow, config: &Config) {
             } else {
                 Command::OpenPanel
             };
-            handle(next, panel, config);
+            handle(next, panel);
         }
-        Command::OpenSettings => {
-            // TODO: Einstellungen-Fenster
-        }
+        Command::OpenSettings => crate::settings::open(panel),
         Command::ToggleFeature(Feature::Zoom) => {
             panel.set_status_text(toggle_zoom().into());
             sync_zoom(panel);
@@ -289,7 +350,7 @@ pub fn handle(cmd: Command, panel: &PanelWindow, config: &Config) {
             } else {
                 Command::SpeakSelection
             };
-            handle(next, panel, config);
+            handle(next, panel);
         }
         Command::SpeakSelection => {
             if let Some(msg) = speak_selection() {
@@ -297,7 +358,7 @@ pub fn handle(cmd: Command, panel: &PanelWindow, config: &Config) {
             }
         }
         Command::SpeakPause => {
-            if let Some(msg) = speak_pause(config.tts.rate) {
+            if let Some(msg) = speak_pause() {
                 panel.set_status_text(msg.into());
             }
         }
@@ -319,9 +380,7 @@ pub fn handle(cmd: Command, panel: &PanelWindow, config: &Config) {
         }
         Command::Quit => {
             shutdown();
-            if let Err(e) = config_with_step(config).save() {
-                eprintln!("config save failed: {e}");
-            }
+            persist_current();
             let _ = slint::quit_event_loop();
         }
     }
