@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 assistant-core = { path = "../../crates/assistant-core" }
 slint = "1.19.0"
+tray-icon = "0.26.1"
 
 [build-dependencies]
 slint-build = "1.19.0"
