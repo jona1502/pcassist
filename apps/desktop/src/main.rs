@@ -57,6 +57,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    let weak_step = panel.as_weak();
+    let step_config = config.clone();
+    panel.on_zoom_step_selected(move |p| {
+        if let Some(panel) = weak_step.upgrade() {
+            app::select_zoom_step(p, &panel, &step_config);
+        }
+    });
+    app::sync_zoom(&panel);
+
     // Tray nach Backend-Init (PanelWindow) erstellen und am Leben halten.
     let tray = tray::create()?;
 

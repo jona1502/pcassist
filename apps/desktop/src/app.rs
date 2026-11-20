@@ -45,6 +45,34 @@ pub fn init_zoom_step(config: &Config) {
     ZOOM_STEP.set(step);
 }
 
+/// Pushes current zoom percent and step to the panel.
+pub fn sync_zoom(panel: &PanelWindow) {
+    let pct = ZOOM.with_borrow(|z| z.as_ref().map_or(100, Zoom::percent));
+    panel.set_zoom_percent(pct as i32);
+    panel.set_zoom_step(zoom_step().percent() as i32);
+}
+
+/// User picked a step size: remember, persist, update the panel.
+pub fn select_zoom_step(percent: i32, panel: &PanelWindow, config: &Config) {
+    let Some(step) = u32::try_from(percent)
+        .ok()
+        .and_then(assistant_zoom::ZoomStep::from_percent)
+    else {
+        return;
+    };
+    ZOOM_STEP.set(step);
+    sync_zoom(panel);
+    if let Err(e) = config_with_step(config).save() {
+        eprintln!("config save failed: {e}");
+    }
+}
+
+fn config_with_step(config: &Config) -> Config {
+    let mut c = config.clone();
+    c.zoom.step = zoom_step().percent();
+    c
+}
+
 fn zoom_status(level: f32) -> String {
     format!("Zoom: {} %", (level * 100.0).round() as i32)
 }
@@ -237,6 +265,7 @@ pub fn handle(cmd: Command, panel: &PanelWindow, config: &Config) {
         }
         Command::ToggleFeature(Feature::Zoom) => {
             panel.set_status_text(toggle_zoom().into());
+            sync_zoom(panel);
         }
         Command::ToggleFeature(Feature::Tts) => {
             let next = if is_speaking() {
@@ -260,12 +289,21 @@ pub fn handle(cmd: Command, panel: &PanelWindow, config: &Config) {
         Command::ToggleFeature(f) => {
             panel.set_status_text(toggle_feature(f).into());
         }
-        Command::ZoomIn => panel.set_status_text(with_zoom(|z| z.zoom_in(zoom_step())).into()),
-        Command::ZoomOut => panel.set_status_text(with_zoom(|z| z.zoom_out(zoom_step())).into()),
-        Command::ZoomReset => panel.set_status_text(with_zoom(Zoom::reset).into()),
+        Command::ZoomIn => {
+            panel.set_status_text(with_zoom(|z| z.zoom_in(zoom_step())).into());
+            sync_zoom(panel);
+        }
+        Command::ZoomOut => {
+            panel.set_status_text(with_zoom(|z| z.zoom_out(zoom_step())).into());
+            sync_zoom(panel);
+        }
+        Command::ZoomReset => {
+            panel.set_status_text(with_zoom(Zoom::reset).into());
+            sync_zoom(panel);
+        }
         Command::Quit => {
             shutdown();
-            if let Err(e) = config.save() {
+            if let Err(e) = config_with_step(config).save() {
                 eprintln!("config save failed: {e}");
             }
             let _ = slint::quit_event_loop();

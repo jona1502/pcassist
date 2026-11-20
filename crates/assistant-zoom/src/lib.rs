@@ -117,7 +117,7 @@ pub fn step_up(percent: u32, step: ZoomStep) -> u32 {
 /// Previous multiple of `step` strictly below `percent`, clamped to 100..=800.
 pub fn step_down(percent: u32, step: ZoomStep) -> u32 {
     let s = step.percent();
-    let below = if percent % s == 0 {
+    let below = if percent.is_multiple_of(s) {
         percent.saturating_sub(s)
     } else {
         percent / s * s
