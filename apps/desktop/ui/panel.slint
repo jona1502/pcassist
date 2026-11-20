@@ -1,28 +1,77 @@
-import { Button } from "std-widgets.slint";
+// Dock-Panel: schmale, abgerundete Leiste am rechten Bildschirmrand, nur Icons.
+// Hinweis Transparenz: Fenster ist `background: transparent`; die sichtbare
+// Leiste ist das abgerundete Rectangle. Auf Windows (winit + femtovg) wird das
+// Fenster dann mit Alpha-Kanal erzeugt.
 
-component QuickAction inherits Button {
-    in property <string> description;
-    min-height: 56px;
-    accessible-label: self.text;
-    accessible-description: self.description;
+global Dock {
+    out property <length> width: 76px;
+    out property <length> bar-padding: 6px;
+    out property <length> tile: 52px;
+    out property <color> bar: #14171de0;
+    out property <color> hover: #ffffff2e;
+    out property <color> pressed: #ffffff55;
+    out property <color> ring: #ffd23f;
+    out property <color> fg: #ffffff;
 }
 
-component StepButton inherits Button {
+// Ein Icon- oder Text-Kachel-Button mit Hover/Pressed/Fokus-Zustand.
+component Tile inherits Rectangle {
+    in property <image> icon;
+    in property <string> label-text;
     in property <string> description;
-    in property <bool> selected;
-    primary: root.selected;
-    min-height: 44px;
-    accessible-label: self.description;
-    accessible-checkable: true;
-    accessible-checked: root.selected;
+    in property <length> tile-width: Dock.tile;
+    in property <length> tile-height: Dock.tile;
+    in property <length> text-size: 14px;
+    in property <length> icon-size: 28px;
+    in property <string> a11y-label;
+    callback clicked();
+
+    width: root.tile-width;
+    height: root.tile-height;
+    border-radius: 12px;
+    background: touch.pressed ? Dock.pressed : (touch.has-hover ? Dock.hover : transparent);
+    border-width: focus.has-focus ? 3px : 0px;
+    border-color: Dock.ring;
+    accessible-role: button;
+    accessible-label: root.a11y-label;
+    accessible-description: root.description;
+    accessible-action-default => { root.clicked(); }
+
+    if root.icon.width > 0: Image {
+        source: root.icon;
+        width: root.icon-size;
+        height: root.icon-size;
+        colorize: Dock.fg;
+    }
+    if root.label-text != "": Text {
+        text: root.label-text;
+        color: Dock.fg;
+        font-size: root.text-size;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+    focus := FocusScope {
+        key-pressed(event) => {
+            if (event.text == " " || event.text == Key.Return) {
+                root.clicked();
+                return accept;
+            }
+            reject
+        }
+    }
 }
 
 export component PanelWindow inherits Window {
-    width: 360px;
-    height: 600px;
+    width: Dock.width;
     title: "PC Assistant";
     no-frame: true;
     always-on-top: true;
+    background: transparent;
     forward-focus: keys;
 
     callback close-requested();
@@ -31,6 +80,9 @@ export component PanelWindow inherits Window {
     in property <string> status-text;
     in property <int> zoom-percent: 100;
     in property <int> zoom-step: 100;
+    // Layout-Hoehe/Breite (logisch) fuer die Platzierung durch Rust.
+    out property <length> content-height: bar.preferred-height;
+    out property <length> content-width: Dock.width;
 
     keys := FocusScope {
         key-pressed(event) => {
@@ -41,130 +93,134 @@ export component PanelWindow inherits Window {
             reject
         }
 
-        VerticalLayout {
-            padding: 16px;
-            spacing: 12px;
+        bar := Rectangle {
+            background: Dock.bar;
+            border-radius: 18px;
+            border-width: 1px;
+            border-color: #ffffff30;
             accessible-role: none;
 
-            HorizontalLayout {
-                Text {
-                    text: "PC Assistant";
-                    font-size: 24px;
-                    vertical-alignment: center;
-                    accessible-role: text;
-                    accessible-label: "PC Assistant";
-                }
-                Rectangle { }
-                Button {
-                    text: "Schließen";
-                    accessible-label: "Schließen";
-                    clicked => { root.close-requested(); }
-                }
-            }
             VerticalLayout {
-                spacing: 8px;
+                padding: Dock.bar-padding;
+                spacing: 6px;
+                alignment: start;
 
-                QuickAction {
-                    text: "Zoom";
+                Tile {
+                    icon: @image-url("icons/zoom.svg");
+                    a11y-label: "Zoom";
                     description: "Bildschirmzoom umschalten";
                     clicked => { root.action-triggered("zoom"); }
                 }
+                // Kompakter Stepper: [-] [pct] [+]
                 HorizontalLayout {
-                    spacing: 8px;
-                    QuickAction {
-                        text: "−";
-                        accessible-label: "Verkleinern";
+                    spacing: 0px;
+                    alignment: center;
+                    Tile {
+                        icon: @image-url("icons/minus.svg");
+                        icon-size: 16px;
+                        tile-width: 18px;
+                        tile-height: 36px;
+                        a11y-label: "Verkleinern";
                         description: "Bildschirmzoom um eine Stufe verkleinern";
                         clicked => { root.action-triggered("zoom-out"); }
                     }
                     Text {
-                        text: root.zoom-percent + " %";
-                        font-size: 28px;
+                        text: root.zoom-percent + "%";
+                        color: Dock.fg;
+                        font-size: 11px;
                         font-weight: 700;
+                        width: 28px;
                         horizontal-alignment: center;
                         vertical-alignment: center;
-                        horizontal-stretch: 1;
                         accessible-role: text;
                         accessible-label: "Zoom " + root.zoom-percent + " Prozent";
                     }
-                    QuickAction {
-                        text: "+";
-                        accessible-label: "Vergrößern";
+                    Tile {
+                        icon: @image-url("icons/plus.svg");
+                        icon-size: 16px;
+                        tile-width: 18px;
+                        tile-height: 36px;
+                        a11y-label: "Vergrößern";
                         description: "Bildschirmzoom um eine Stufe vergrößern";
                         clicked => { root.action-triggered("zoom-in"); }
                     }
                 }
-                HorizontalLayout {
-                    spacing: 8px;
-                    StepButton {
-                        text: "100 %";
-                        description: "Schrittweite 100 Prozent";
-                        selected: root.zoom-step == 100;
-                        clicked => { root.zoom-step-selected(100); }
-                    }
-                    StepButton {
-                        text: "50 %";
-                        description: "Schrittweite 50 Prozent";
-                        selected: root.zoom-step == 50;
-                        clicked => { root.zoom-step-selected(50); }
-                    }
-                    StepButton {
-                        text: "10 %";
-                        description: "Schrittweite 10 Prozent";
-                        selected: root.zoom-step == 10;
-                        clicked => { root.zoom-step-selected(10); }
+                // Schrittweite: zyklisch 100 -> 50 -> 10 -> 100
+                Tile {
+                    label-text: "±" + root.zoom-step;
+                    a11y-label: "Schrittweite " + root.zoom-step + " Prozent, ändern";
+                    description: "Schrittweite des Zooms umschalten";
+                    clicked => {
+                        if (root.zoom-step == 100) {
+                            root.zoom-step-selected(50);
+                        } else if (root.zoom-step == 50) {
+                            root.zoom-step-selected(10);
+                        } else {
+                            root.zoom-step-selected(100);
+                        }
                     }
                 }
-                QuickAction {
-                    text: "Reset";
-                    accessible-label: "Zoom zurücksetzen";
+                Tile {
+                    icon: @image-url("icons/reset.svg");
+                    a11y-label: "Zoom zurücksetzen";
                     description: "Bildschirmzoom auf 100 Prozent zurücksetzen";
                     clicked => { root.action-triggered("zoom-reset"); }
                 }
-                QuickAction {
-                    text: "Vorlesen";
+                Tile {
+                    icon: @image-url("icons/speaker.svg");
+                    a11y-label: "Vorlesen";
                     description: "Vorlesen umschalten";
                     clicked => { root.action-triggered("tts"); }
                 }
-                HorizontalLayout {
-                    spacing: 8px;
-                    QuickAction {
-                        text: "Pause/Weiter";
-                        accessible-label: "Vorlesen pausieren oder fortsetzen";
-                        description: "Vorlesen pausieren oder fortsetzen";
-                        clicked => { root.action-triggered("speak-pause"); }
-                    }
-                    QuickAction {
-                        text: "Stopp";
-                        accessible-label: "Vorlesen stoppen";
-                        description: "Vorlesen beenden";
-                        clicked => { root.action-triggered("speak-stop"); }
-                    }
+                Tile {
+                    icon: @image-url("icons/pause.svg");
+                    a11y-label: "Vorlesen pausieren oder fortsetzen";
+                    description: "Vorlesen pausieren oder fortsetzen";
+                    clicked => { root.action-triggered("speak-pause"); }
                 }
-                QuickAction {
-                    text: "Mikrofon";
+                Tile {
+                    icon: @image-url("icons/stop.svg");
+                    a11y-label: "Vorlesen stoppen";
+                    description: "Vorlesen beenden";
+                    clicked => { root.action-triggered("speak-stop"); }
+                }
+                Tile {
+                    icon: @image-url("icons/mic.svg");
+                    a11y-label: "Mikrofon";
                     description: "Mikrofon umschalten";
                     clicked => { root.action-triggered("mic"); }
                 }
-                QuickAction {
-                    text: "Kontrast";
+                Tile {
+                    icon: @image-url("icons/contrast.svg");
+                    a11y-label: "Kontrast";
                     description: "Hohen Kontrast umschalten";
                     clicked => { root.action-triggered("contrast"); }
                 }
-                QuickAction {
-                    text: "Einstellungen";
+                Tile {
+                    icon: @image-url("icons/gear.svg");
+                    a11y-label: "Einstellungen";
                     description: "Einstellungen öffnen";
                     clicked => { root.action-triggered("settings"); }
                 }
+                Tile {
+                    icon: @image-url("icons/close.svg");
+                    a11y-label: "Schließen";
+                    description: "Panel schließen";
+                    clicked => { root.close-requested(); }
+                }
+                // Slint hat keine Live-Region; kleiner Text, Label traegt die volle Meldung.
+                if root.status-text != "": Text {
+                    text: root.status-text;
+                    color: Dock.fg;
+                    font-size: 9px;
+                    wrap: word-wrap;
+                    overflow: elide;
+                    horizontal-alignment: center;
+                    max-height: 26px;
+                    accessible-role: text;
+                    accessible-label: root.status-text;
+                }
             }
-            // Slint hat keine Live-Region; schlichter Text mit Label.
-            Text {
-                text: root.status-text;
-                wrap: word-wrap;
-                accessible-role: text;
-                accessible-label: root.status-text;
-            }
-            Rectangle { }
         }
     }
 
