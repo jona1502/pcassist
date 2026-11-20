@@ -279,6 +279,13 @@ name = "assistant-core"
 version = "0.1.0"
 
 [[package]]
+name = "assistant-zoom"
+version = "0.1.0"
+dependencies = [
+ "windows-sys 0.59.0",
+]
+
+[[package]]
 name = "async-broadcast"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
