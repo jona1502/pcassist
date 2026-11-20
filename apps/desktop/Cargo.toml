@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+assistant-config = { path = "../../crates/assistant-config" }
 assistant-core = { path = "../../crates/assistant-core" }
 slint = "1.19.0"
 tray-icon = "0.26.1"
