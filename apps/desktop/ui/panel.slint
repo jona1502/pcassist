@@ -4,7 +4,7 @@
 // Fenster dann mit Alpha-Kanal erzeugt.
 
 global Dock {
-    out property <length> width: 76px;
+    out property <length> width: 132px;
     out property <length> bar-padding: 6px;
     out property <length> tile: 52px;
     out property <color> bar: #14171de0;
@@ -26,7 +26,7 @@ component Tile inherits Rectangle {
     in property <string> a11y-label;
     callback clicked();
 
-    width: root.tile-width;
+    min-width: root.tile-width;
     height: root.tile-height;
     border-radius: 12px;
     background: touch.pressed ? Dock.pressed : (touch.has-hover ? Dock.hover : transparent);
@@ -118,8 +118,8 @@ export component PanelWindow inherits Window {
                     Tile {
                         icon: @image-url("icons/minus.svg");
                         icon-size: 16px;
-                        tile-width: 18px;
-                        tile-height: 36px;
+                        tile-width: 40px;
+                        tile-height: 44px;
                         a11y-label: "Verkleinern";
                         description: "Bildschirmzoom um eine Stufe verkleinern";
                         clicked => { root.action-triggered("zoom-out"); }
@@ -127,9 +127,9 @@ export component PanelWindow inherits Window {
                     Text {
                         text: root.zoom-percent + "%";
                         color: Dock.fg;
-                        font-size: 11px;
+                        font-size: 14px;
                         font-weight: 700;
-                        width: 28px;
+                        width: 40px;
                         horizontal-alignment: center;
                         vertical-alignment: center;
                         accessible-role: text;
@@ -138,8 +138,8 @@ export component PanelWindow inherits Window {
                     Tile {
                         icon: @image-url("icons/plus.svg");
                         icon-size: 16px;
-                        tile-width: 18px;
-                        tile-height: 36px;
+                        tile-width: 40px;
+                        tile-height: 44px;
                         a11y-label: "Vergrößern";
                         description: "Bildschirmzoom um eine Stufe vergrößern";
                         clicked => { root.action-triggered("zoom-in"); }
