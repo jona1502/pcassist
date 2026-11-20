@@ -4,7 +4,7 @@
 // Fenster dann mit Alpha-Kanal erzeugt.
 
 global Dock {
-    out property <length> width: 132px;
+    out property <length> width: 196px;
     out property <length> bar-padding: 6px;
     out property <length> tile: 52px;
     out property <color> bar: #14171de0;
@@ -18,6 +18,8 @@ global Dock {
 component Tile inherits Rectangle {
     in property <image> icon;
     in property <string> label-text;
+    // Name rechts neben dem Icon (linksbuendig).
+    in property <string> side-label;
     in property <string> description;
     in property <length> tile-width: Dock.tile;
     in property <length> tile-height: Dock.tile;
@@ -37,7 +39,7 @@ component Tile inherits Rectangle {
     accessible-description: root.description;
     accessible-action-default => { root.clicked(); }
 
-    if root.icon.width > 0: Image {
+    if root.icon.width > 0 && root.side-label == "": Image {
         source: root.icon;
         width: root.icon-size;
         height: root.icon-size;
@@ -50,6 +52,26 @@ component Tile inherits Rectangle {
         font-weight: 700;
         horizontal-alignment: center;
         vertical-alignment: center;
+    }
+
+    if root.side-label != "": HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 8px;
+        spacing: 12px;
+        alignment: start;
+        if root.icon.width > 0: Image {
+            source: root.icon;
+            width: root.icon-size;
+            image-fit: contain;
+            colorize: Dock.fg;
+        }
+        Text {
+            text: root.side-label;
+            color: Dock.fg;
+            font-size: root.text-size;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
     }
 
     touch := TouchArea {
@@ -107,6 +129,7 @@ export component PanelWindow inherits Window {
 
                 Tile {
                     icon: @image-url("icons/zoom.svg");
+                    side-label: "Zoom";
                     a11y-label: "Zoom";
                     description: "Bildschirmzoom umschalten";
                     clicked => { root.action-triggered("zoom"); }
@@ -147,7 +170,7 @@ export component PanelWindow inherits Window {
                 }
                 // Schrittweite: zyklisch 100 -> 50 -> 10 -> 100
                 Tile {
-                    label-text: "±" + root.zoom-step;
+                    side-label: "Schritt ±" + root.zoom-step;
                     a11y-label: "Schrittweite " + root.zoom-step + " Prozent, ändern";
                     description: "Schrittweite des Zooms umschalten";
                     clicked => {
@@ -162,48 +185,56 @@ export component PanelWindow inherits Window {
                 }
                 Tile {
                     icon: @image-url("icons/reset.svg");
+                    side-label: "Zurücksetzen";
                     a11y-label: "Zoom zurücksetzen";
                     description: "Bildschirmzoom auf 100 Prozent zurücksetzen";
                     clicked => { root.action-triggered("zoom-reset"); }
                 }
                 Tile {
                     icon: @image-url("icons/speaker.svg");
+                    side-label: "Vorlesen";
                     a11y-label: "Vorlesen";
                     description: "Vorlesen umschalten";
                     clicked => { root.action-triggered("tts"); }
                 }
                 Tile {
                     icon: @image-url("icons/pause.svg");
+                    side-label: "Pause / Weiter";
                     a11y-label: "Vorlesen pausieren oder fortsetzen";
                     description: "Vorlesen pausieren oder fortsetzen";
                     clicked => { root.action-triggered("speak-pause"); }
                 }
                 Tile {
                     icon: @image-url("icons/stop.svg");
+                    side-label: "Stopp";
                     a11y-label: "Vorlesen stoppen";
                     description: "Vorlesen beenden";
                     clicked => { root.action-triggered("speak-stop"); }
                 }
                 Tile {
                     icon: @image-url("icons/mic.svg");
+                    side-label: "Mikrofon";
                     a11y-label: "Mikrofon";
                     description: "Mikrofon umschalten";
                     clicked => { root.action-triggered("mic"); }
                 }
                 Tile {
                     icon: @image-url("icons/contrast.svg");
+                    side-label: "Kontrast";
                     a11y-label: "Kontrast";
                     description: "Hohen Kontrast umschalten";
                     clicked => { root.action-triggered("contrast"); }
                 }
                 Tile {
                     icon: @image-url("icons/gear.svg");
+                    side-label: "Einstellungen";
                     a11y-label: "Einstellungen";
                     description: "Einstellungen öffnen";
                     clicked => { root.action-triggered("settings"); }
                 }
                 Tile {
                     icon: @image-url("icons/close.svg");
+                    side-label: "Schließen";
                     a11y-label: "Schließen";
                     description: "Panel schließen";
                     clicked => { root.close-requested(); }
