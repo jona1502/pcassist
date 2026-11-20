@@ -14,6 +14,28 @@ global Dock {
     out property <color> fg: #ffffff;
 }
 
+// Trennlinie mit Gruppenueberschrift: zeigt, was zusammengehoert.
+component GroupHeader inherits Rectangle {
+    in property <string> title;
+    height: 30px;
+    accessible-role: none;
+    Rectangle {
+        y: 0px;
+        height: 1px;
+        background: #ffffff40;
+    }
+    Text {
+        x: 12px;
+        y: 8px;
+        text: root.title;
+        color: #ffd23f;
+        font-size: 11px;
+        font-weight: 700;
+        accessible-role: text;
+        accessible-label: "Gruppe " + root.title;
+    }
+}
+
 // Ein Icon- oder Text-Kachel-Button mit Hover/Pressed/Fokus-Zustand.
 component Tile inherits Rectangle {
     in property <image> icon;
@@ -127,6 +149,7 @@ export component PanelWindow inherits Window {
                 spacing: 6px;
                 alignment: start;
 
+                GroupHeader { title: "Zoom"; }
                 Tile {
                     icon: @image-url("icons/zoom.svg");
                     side-label: "Zoom";
@@ -190,6 +213,7 @@ export component PanelWindow inherits Window {
                     description: "Bildschirmzoom auf 100 Prozent zurücksetzen";
                     clicked => { root.action-triggered("zoom-reset"); }
                 }
+                GroupHeader { title: "Vorlesen"; }
                 Tile {
                     icon: @image-url("icons/speaker.svg");
                     side-label: "Vorlesen";
@@ -211,6 +235,7 @@ export component PanelWindow inherits Window {
                     description: "Vorlesen beenden";
                     clicked => { root.action-triggered("speak-stop"); }
                 }
+                GroupHeader { title: "Eingabe"; }
                 Tile {
                     icon: @image-url("icons/mic.svg");
                     side-label: "Mikrofon";
@@ -218,6 +243,7 @@ export component PanelWindow inherits Window {
                     description: "Mikrofon umschalten";
                     clicked => { root.action-triggered("mic"); }
                 }
+                GroupHeader { title: "Anzeige"; }
                 Tile {
                     icon: @image-url("icons/contrast.svg");
                     side-label: "Kontrast";
@@ -225,6 +251,7 @@ export component PanelWindow inherits Window {
                     description: "Hohen Kontrast umschalten";
                     clicked => { root.action-triggered("contrast"); }
                 }
+                GroupHeader { title: "Programm"; }
                 Tile {
                     icon: @image-url("icons/gear.svg");
                     side-label: "Einstellungen";
