@@ -205,17 +205,32 @@ fn color(hex: &str, alpha: f32) -> Color {
     Color::from_argb_u8((alpha.clamp(0.0, 1.0) * 255.0).round() as u8, r, g, b)
 }
 
-fn push_props(win: &MouseOverlay, cfg: &MouseConfig) {
+/// Form (0 Ring, 1 gefuellt, 2 Fadenkreuz) und Markierungsfarbe inkl. Deckkraft.
+/// Auch fuer die Vorschau in den Einstellungen, damit beide gleich aussehen.
+pub fn mark_style(cfg: &MouseConfig) -> (i32, Color) {
     let (shape, factor) = match cfg.shape.as_str() {
         "filled" => (1, FILLED_ALPHA_FACTOR),
         "crosshair" => (2, 1.0),
         _ => (0, 1.0),
     };
+    (
+        shape,
+        color(&cfg.color, cfg.opacity as f32 / 100.0 * factor),
+    )
+}
+
+/// Farbe des Klick-Impulses.
+pub fn click_color(cfg: &MouseConfig) -> Color {
+    color(&cfg.click_color, 1.0)
+}
+
+fn push_props(win: &MouseOverlay, cfg: &MouseConfig) {
+    let (shape, mark) = mark_style(cfg);
     win.set_shape(shape);
-    win.set_mark_color(color(&cfg.color, cfg.opacity as f32 / 100.0 * factor));
+    win.set_mark_color(mark);
     win.set_diameter(cfg.size as f32);
     win.set_thickness(cfg.thickness as f32);
-    win.set_click_color(color(&cfg.click_color, 1.0));
+    win.set_click_color(click_color(cfg));
 }
 
 #[cfg(windows)]

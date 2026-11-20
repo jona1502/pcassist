@@ -1,12 +1,14 @@
 //! Settings window: created lazily, filled from the current config on every
 //! open, applied and saved on "Speichern". Nothing sensitive is logged.
 
-use crate::{PanelWindow, SettingsWindow};
-use assistant_config::{Config, HotkeyConfig};
+use crate::{MouseSwatch, PanelWindow, SettingsWindow};
+use assistant_config::{
+    parse_hex_color, Config, HotkeyConfig, MouseConfig, MOUSE_COLOR_PRESETS, MOUSE_SHAPES,
+};
 use global_hotkey::hotkey::HotKey;
 use slint::{
-    CloseRequestResponse, ComponentHandle, ModelRc, PhysicalPosition, PhysicalSize, SharedString,
-    VecModel,
+    CloseRequestResponse, Color, ComponentHandle, ModelRc, PhysicalPosition, PhysicalSize,
+    SharedString, VecModel,
 };
 use std::cell::RefCell;
 use std::str::FromStr;
@@ -206,20 +208,106 @@ fn populate(win: &SettingsWindow, cfg: &Config) {
     win.set_hk_stop(stop.into());
     win.set_hk_mouse(mouse.into());
     win.set_always_on_top_setting(cfg.panel.always_on_top);
+    populate_mouse(win, &cfg.mouse);
+    // Ungespeicherte Vorschau eines frueheren Oeffnens verwerfen.
+    crate::mouse_overlay::apply_config(&cfg.mouse);
     win.set_status_text("".into());
+}
+
+fn shape_index(shape: &str) -> i32 {
+    MOUSE_SHAPES.iter().position(|s| *s == shape).unwrap_or(0) as i32
+}
+
+fn populate_mouse(win: &SettingsWindow, m: &MouseConfig) {
+    win.set_mouse_enabled(m.enabled);
+    win.set_mouse_shape(shape_index(&m.shape));
+    win.set_mouse_color(m.color.clone().into());
+    win.set_mouse_color_edit(m.color.clone().into());
+    win.set_mouse_size(m.size as f32);
+    win.set_mouse_thickness(m.thickness as f32);
+    win.set_mouse_opacity(m.opacity as f32);
+    win.set_mouse_click(m.click_highlight);
+    win.set_mouse_click_color(m.click_color.clone().into());
+    push_preview(win, m);
+}
+
+/// Current mouse values of the window, validated like on load.
+fn mouse_from_window(win: &SettingsWindow) -> MouseConfig {
+    let shape = usize::try_from(win.get_mouse_shape())
+        .ok()
+        .and_then(|i| MOUSE_SHAPES.get(i))
+        .unwrap_or(&MOUSE_SHAPES[0]);
+    MouseConfig {
+        enabled: win.get_mouse_enabled(),
+        shape: (*shape).to_string(),
+        color: win.get_mouse_color().to_string(),
+        size: win.get_mouse_size().round().max(0.0) as u32,
+        thickness: win.get_mouse_thickness().round().max(0.0) as u32,
+        opacity: win.get_mouse_opacity().round().max(0.0) as u32,
+        click_highlight: win.get_mouse_click(),
+        click_color: win.get_mouse_click_color().to_string(),
+    }
+    .sanitized()
+}
+
+fn push_preview(win: &SettingsWindow, m: &MouseConfig) {
+    win.set_mouse_preview_color(crate::mouse_overlay::mark_style(m).1);
+    win.set_mouse_preview_click(crate::mouse_overlay::click_color(m));
+}
+
+/// Preset swatches with a check-mark colour that stays readable on them.
+fn swatches() -> ModelRc<MouseSwatch> {
+    let list: Vec<MouseSwatch> = MOUSE_COLOR_PRESETS
+        .iter()
+        .map(|(name, hex)| {
+            let (r, g, b) = parse_hex_color(hex).unwrap_or((255, 255, 255));
+            let luma = 0.2126 * f32::from(r) + 0.7152 * f32::from(g) + 0.0722 * f32::from(b);
+            MouseSwatch {
+                name: (*name).into(),
+                hex: (*hex).into(),
+                color: Color::from_rgb_u8(r, g, b),
+                mark: if luma > 140.0 {
+                    Color::from_rgb_u8(0, 0, 0)
+                } else {
+                    Color::from_rgb_u8(255, 255, 255)
+                },
+            }
+        })
+        .collect();
+    ModelRc::new(VecModel::from(list))
+}
+
+/// Keeps an open settings window in step with a hotkey/tile toggle of the marker.
+pub fn sync_mouse_enabled() {
+    let weak = WINDOW.with_borrow(|w| w.as_ref().map(SettingsWindow::as_weak));
+    if let Some(w) = weak.and_then(|w| w.upgrade()) {
+        w.set_mouse_enabled(crate::mouse_overlay::current_config().enabled);
+    }
 }
 
 fn build(panel: &PanelWindow) -> Result<SettingsWindow, slint::PlatformError> {
     let win = SettingsWindow::new()?;
     win.window().on_close_requested(|| {
-        restore_tts();
+        revert_unsaved();
         CloseRequestResponse::HideWindow
     });
     win.on_validate_hotkey(|s| crate::hotkey::is_valid(s.trim()));
+    win.on_validate_hex(|s| parse_hex_color(s.as_str()).is_some());
+    win.set_mouse_presets(swatches());
+
+    // Live: every change shows up on the real overlay at once; only "Speichern"
+    // persists it, closing without saving reverts (see `revert_unsaved`).
+    let weak = win.as_weak();
+    win.on_mouse_changed(move || {
+        let Some(w) = weak.upgrade() else { return };
+        let m = mouse_from_window(&w);
+        push_preview(&w, &m);
+        crate::mouse_overlay::apply_config(&m);
+    });
 
     let weak = win.as_weak();
     win.on_close_requested(move || {
-        restore_tts();
+        revert_unsaved();
         if let Some(w) = weak.upgrade() {
             let _ = w.hide();
         }
@@ -245,9 +333,10 @@ fn build(panel: &PanelWindow) -> Result<SettingsWindow, slint::PlatformError> {
     Ok(win)
 }
 
-/// Unsaved test rate and device must not outlive the window.
-fn restore_tts() {
+/// Unsaved test rate, device and mouse preview must not outlive the window.
+fn revert_unsaved() {
     let cfg = current();
+    crate::mouse_overlay::apply_config(&cfg.mouse);
     crate::app::set_tts_rate(cfg.tts.rate);
     crate::app::set_tts_output(cfg.audio.output_device.as_deref());
 }
@@ -275,6 +364,7 @@ fn save(win: &SettingsWindow, panel: &PanelWindow) {
         ],
     );
     cfg.hotkeys = hotkeys;
+    cfg.mouse = mouse_from_window(win);
 
     if let Err(e) = cfg.save() {
         eprintln!("config save failed: {e}");
@@ -284,6 +374,7 @@ fn save(win: &SettingsWindow, panel: &PanelWindow) {
     set_current(cfg.clone());
     crate::app::apply_config(&cfg, panel);
     crate::hotkey::reregister_all(&cfg.hotkeys);
+    populate_mouse(win, &cfg.mouse);
     win.set_status_text(
         if rejected.is_empty() {
             "Gespeichert".to_string()
@@ -308,6 +399,14 @@ mod tests {
         let v = device_choices(vec!["A".into()], Some("A"));
         assert_eq!(v, ["Standardgerät", "A"]);
         assert_eq!(device_choices(vec![], None), ["Standardgerät"]);
+    }
+
+    #[test]
+    fn shape_index_follows_config_order() {
+        assert_eq!(shape_index("ring"), 0);
+        assert_eq!(shape_index("filled"), 1);
+        assert_eq!(shape_index("crosshair"), 2);
+        assert_eq!(shape_index("unbekannt"), 0);
     }
 
     #[test]
