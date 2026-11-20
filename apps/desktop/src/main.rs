@@ -1,7 +1,6 @@
 mod app;
 mod hotkey;
 mod platform;
-#[allow(dead_code)] // wired up in the next commit
 mod selection;
 mod single_instance;
 mod tray;
@@ -44,6 +43,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "zoom-in" => Command::ZoomIn,
             "zoom-out" => Command::ZoomOut,
             "zoom-reset" => Command::ZoomReset,
+            "speak-pause" => Command::SpeakPause,
+            "speak-stop" => Command::SpeakStop,
             "tts" => Command::ToggleFeature(Feature::Tts),
             "mic" => Command::ToggleFeature(Feature::Mic),
             "contrast" => Command::ToggleFeature(Feature::Contrast),
@@ -68,7 +69,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::time::Duration::from_millis(50),
         move || {
             let Some(panel) = weak.upgrade() else { return };
-            app::tick();
+            app::tick(&panel, &config);
             while let Ok(cmd) = single_rx.try_recv() {
                 app::handle(cmd, &panel, &config);
             }

@@ -82,6 +82,21 @@ export component PanelWindow inherits Window {
                     description: "Vorlesen umschalten";
                     clicked => { root.action-triggered("tts"); }
                 }
+                HorizontalLayout {
+                    spacing: 8px;
+                    QuickAction {
+                        text: "Pause/Weiter";
+                        accessible-label: "Vorlesen pausieren oder fortsetzen";
+                        description: "Vorlesen pausieren oder fortsetzen";
+                        clicked => { root.action-triggered("speak-pause"); }
+                    }
+                    QuickAction {
+                        text: "Stopp";
+                        accessible-label: "Vorlesen stoppen";
+                        description: "Vorlesen beenden";
+                        clicked => { root.action-triggered("speak-stop"); }
+                    }
+                }
                 QuickAction {
                     text: "Mikrofon";
                     description: "Mikrofon umschalten";

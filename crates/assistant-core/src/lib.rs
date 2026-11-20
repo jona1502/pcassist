@@ -20,5 +20,9 @@ pub enum Command {
     ZoomIn,
     ZoomOut,
     ZoomReset,
+    SpeakSelection,
+    /// Toggles pause/resume of the current speech.
+    SpeakPause,
+    SpeakStop,
     Quit,
 }

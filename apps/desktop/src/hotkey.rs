@@ -45,6 +45,12 @@ pub fn register(cfg: &HotkeyConfig) -> Hotkeys {
         (&cfg.zoom_in, &defaults.zoom_in, Command::ZoomIn),
         (&cfg.zoom_out, &defaults.zoom_out, Command::ZoomOut),
         (&cfg.zoom_reset, &defaults.zoom_reset, Command::ZoomReset),
+        (
+            &cfg.speak_selection,
+            &defaults.speak_selection,
+            Command::SpeakSelection,
+        ),
+        (&cfg.speak_stop, &defaults.speak_stop, Command::SpeakStop),
     ];
     let manager = match GlobalHotKeyManager::new() {
         Ok(m) => m,
@@ -85,10 +91,17 @@ mod tests {
     #[test]
     fn default_zoom_hotkeys_parse_and_differ() {
         let d = HotkeyConfig::default();
-        let ids: Vec<u32> = [&d.toggle_panel, &d.zoom_in, &d.zoom_out, &d.zoom_reset]
-            .iter()
-            .map(|s| HotKey::from_str(s).expect("default parses").id())
-            .collect();
+        let ids: Vec<u32> = [
+            &d.toggle_panel,
+            &d.zoom_in,
+            &d.zoom_out,
+            &d.zoom_reset,
+            &d.speak_selection,
+            &d.speak_stop,
+        ]
+        .iter()
+        .map(|s| HotKey::from_str(s).expect("default parses").id())
+        .collect();
         for (i, a) in ids.iter().enumerate() {
             for b in &ids[i + 1..] {
                 assert_ne!(a, b);
