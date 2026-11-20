@@ -10,6 +10,29 @@ pub struct Config {
     pub panel: PanelConfig,
     pub hotkeys: HotkeyConfig,
     pub tts: TtsConfig,
+    pub zoom: ZoomConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ZoomConfig {
+    /// Zoom step in percent: 100, 50 or 10. Anything else falls back to 100.
+    #[serde(deserialize_with = "valid_step")]
+    pub step: u32,
+}
+
+impl Default for ZoomConfig {
+    fn default() -> Self {
+        Self { step: 100 }
+    }
+}
+
+fn valid_step<'de, D: serde::Deserializer<'de>>(d: D) -> Result<u32, D::Error> {
+    let v = i64::deserialize(d)?;
+    Ok(match v {
+        100 | 50 | 10 => v as u32,
+        _ => 100,
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -185,5 +208,51 @@ width = 420
         std::fs::write(&p, "[panel\nwidth = ???").unwrap();
         assert_eq!(Config::load_from(&p), Config::default());
         assert!(d.path().join("c.toml.bak").exists());
+    }
+
+    #[test]
+    fn zoom_step_loads_and_falls_back() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("c.toml");
+        std::fs::write(
+            &p,
+            "[panel]
+width = 420
+",
+        )
+        .unwrap();
+        assert_eq!(Config::load_from(&p).zoom.step, 100);
+        std::fs::write(
+            &p,
+            "[zoom]
+step = 50
+",
+        )
+        .unwrap();
+        assert_eq!(Config::load_from(&p).zoom.step, 50);
+        std::fs::write(
+            &p,
+            "[zoom]
+step = 10
+",
+        )
+        .unwrap();
+        assert_eq!(Config::load_from(&p).zoom.step, 10);
+        std::fs::write(
+            &p,
+            "[zoom]
+step = 33
+",
+        )
+        .unwrap();
+        assert_eq!(Config::load_from(&p).zoom.step, 100);
+        std::fs::write(
+            &p,
+            "[zoom]
+step = -5
+",
+        )
+        .unwrap();
+        assert_eq!(Config::load_from(&p).zoom.step, 100);
     }
 }

@@ -21,6 +21,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let config = Config::load();
+    app::init_zoom_step(&config);
     let panel = PanelWindow::new()?;
     // Schliessen versteckt nur das Fenster; Beenden nur ueber das Tray-Menue.
     panel

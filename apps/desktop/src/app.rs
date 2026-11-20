@@ -39,6 +39,12 @@ fn zoom_step() -> assistant_zoom::ZoomStep {
     ZOOM_STEP.get()
 }
 
+/// Applies the configured zoom step (invalid values fall back to 100 %).
+pub fn init_zoom_step(config: &Config) {
+    let step = assistant_zoom::ZoomStep::from_percent(config.zoom.step).unwrap_or_default();
+    ZOOM_STEP.set(step);
+}
+
 fn zoom_status(level: f32) -> String {
     format!("Zoom: {} %", (level * 100.0).round() as i32)
 }
