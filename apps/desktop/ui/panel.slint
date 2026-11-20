@@ -43,5 +43,9 @@ export component PanelWindow inherits Window {
         }
     }
 
+    public function focus-panel() {
+        keys.focus();
+    }
+
     init => { keys.focus(); }
 }
