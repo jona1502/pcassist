@@ -1,5 +1,14 @@
 //! Core types shared across the assistant.
 
+/// Toggleable assistant features.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Feature {
+    Zoom,
+    Tts,
+    Mic,
+    Contrast,
+}
+
 /// Commands the assistant can execute.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Command {
@@ -7,5 +16,6 @@ pub enum Command {
     ClosePanel,
     TogglePanel,
     OpenSettings,
+    ToggleFeature(Feature),
     Quit,
 }

@@ -1,5 +1,12 @@
 import { Button } from "std-widgets.slint";
 
+component QuickAction inherits Button {
+    in property <string> description;
+    min-height: 56px;
+    accessible-label: self.text;
+    accessible-description: self.description;
+}
+
 export component PanelWindow inherits Window {
     width: 360px;
     height: 600px;
@@ -9,6 +16,8 @@ export component PanelWindow inherits Window {
     forward-focus: keys;
 
     callback close-requested();
+    callback action-triggered(string);
+    in property <string> status-text;
 
     keys := FocusScope {
         key-pressed(event) => {
@@ -38,6 +47,42 @@ export component PanelWindow inherits Window {
                     accessible-label: "Schließen";
                     clicked => { root.close-requested(); }
                 }
+            }
+            VerticalLayout {
+                spacing: 8px;
+
+                QuickAction {
+                    text: "Zoom";
+                    description: "Bildschirmzoom umschalten";
+                    clicked => { root.action-triggered("zoom"); }
+                }
+                QuickAction {
+                    text: "Vorlesen";
+                    description: "Vorlesen umschalten";
+                    clicked => { root.action-triggered("tts"); }
+                }
+                QuickAction {
+                    text: "Mikrofon";
+                    description: "Mikrofon umschalten";
+                    clicked => { root.action-triggered("mic"); }
+                }
+                QuickAction {
+                    text: "Kontrast";
+                    description: "Hohen Kontrast umschalten";
+                    clicked => { root.action-triggered("contrast"); }
+                }
+                QuickAction {
+                    text: "Einstellungen";
+                    description: "Einstellungen öffnen";
+                    clicked => { root.action-triggered("settings"); }
+                }
+            }
+            // Slint hat keine Live-Region; schlichter Text mit Label.
+            Text {
+                text: root.status-text;
+                wrap: word-wrap;
+                accessible-role: text;
+                accessible-label: root.status-text;
             }
             Rectangle { }
         }
