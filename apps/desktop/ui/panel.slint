@@ -7,6 +7,16 @@ component QuickAction inherits Button {
     accessible-description: self.description;
 }
 
+component StepButton inherits Button {
+    in property <string> description;
+    in property <bool> selected;
+    primary: root.selected;
+    min-height: 44px;
+    accessible-label: self.description;
+    accessible-checkable: true;
+    accessible-checked: root.selected;
+}
+
 export component PanelWindow inherits Window {
     width: 360px;
     height: 600px;
@@ -17,7 +27,10 @@ export component PanelWindow inherits Window {
 
     callback close-requested();
     callback action-triggered(string);
+    callback zoom-step-selected(int);
     in property <string> status-text;
+    in property <int> zoom-percent: 100;
+    in property <int> zoom-step: 100;
 
     keys := FocusScope {
         key-pressed(event) => {
@@ -59,23 +72,54 @@ export component PanelWindow inherits Window {
                 HorizontalLayout {
                     spacing: 8px;
                     QuickAction {
-                        text: "+";
-                        accessible-label: "Vergrößern";
-                        description: "Bildschirmzoom um eine Stufe vergrößern";
-                        clicked => { root.action-triggered("zoom-in"); }
-                    }
-                    QuickAction {
                         text: "−";
                         accessible-label: "Verkleinern";
                         description: "Bildschirmzoom um eine Stufe verkleinern";
                         clicked => { root.action-triggered("zoom-out"); }
                     }
-                    QuickAction {
-                        text: "Reset";
-                        accessible-label: "Zoom zurücksetzen";
-                        description: "Bildschirmzoom auf 100 Prozent zurücksetzen";
-                        clicked => { root.action-triggered("zoom-reset"); }
+                    Text {
+                        text: root.zoom-percent + " %";
+                        font-size: 28px;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                        accessible-role: text;
+                        accessible-label: "Zoom " + root.zoom-percent + " Prozent";
                     }
+                    QuickAction {
+                        text: "+";
+                        accessible-label: "Vergrößern";
+                        description: "Bildschirmzoom um eine Stufe vergrößern";
+                        clicked => { root.action-triggered("zoom-in"); }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    StepButton {
+                        text: "100 %";
+                        description: "Schrittweite 100 Prozent";
+                        selected: root.zoom-step == 100;
+                        clicked => { root.zoom-step-selected(100); }
+                    }
+                    StepButton {
+                        text: "50 %";
+                        description: "Schrittweite 50 Prozent";
+                        selected: root.zoom-step == 50;
+                        clicked => { root.zoom-step-selected(50); }
+                    }
+                    StepButton {
+                        text: "10 %";
+                        description: "Schrittweite 10 Prozent";
+                        selected: root.zoom-step == 10;
+                        clicked => { root.zoom-step-selected(10); }
+                    }
+                }
+                QuickAction {
+                    text: "Reset";
+                    accessible-label: "Zoom zurücksetzen";
+                    description: "Bildschirmzoom auf 100 Prozent zurücksetzen";
+                    clicked => { root.action-triggered("zoom-reset"); }
                 }
                 QuickAction {
                     text: "Vorlesen";

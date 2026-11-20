@@ -21,6 +21,7 @@ fn dock_right(panel: &PanelWindow, panel_width: u32) {
 thread_local! {
     static FEATURES: Cell<[bool; 4]> = const { Cell::new([false; 4]) };
     /// Lazily created on first zoom use; dropped in `shutdown`.
+    static ZOOM_STEP: Cell<assistant_zoom::ZoomStep> = const { Cell::new(assistant_zoom::ZoomStep::Coarse) };
     static ZOOM: RefCell<Option<Zoom>> = const { RefCell::new(None) };
     /// Lazily created on first speech; dropped in `shutdown`.
     static TTS: RefCell<Option<Tts>> = const { RefCell::new(None) };
@@ -33,6 +34,44 @@ thread_local! {
 
 const ZOOM_UNAVAILABLE: &str = "Zoom nicht verfügbar";
 const ZOOM_ON_LEVEL: f32 = 2.0;
+
+fn zoom_step() -> assistant_zoom::ZoomStep {
+    ZOOM_STEP.get()
+}
+
+/// Applies the configured zoom step (invalid values fall back to 100 %).
+pub fn init_zoom_step(config: &Config) {
+    let step = assistant_zoom::ZoomStep::from_percent(config.zoom.step).unwrap_or_default();
+    ZOOM_STEP.set(step);
+}
+
+/// Pushes current zoom percent and step to the panel.
+pub fn sync_zoom(panel: &PanelWindow) {
+    let pct = ZOOM.with_borrow(|z| z.as_ref().map_or(100, Zoom::percent));
+    panel.set_zoom_percent(pct as i32);
+    panel.set_zoom_step(zoom_step().percent() as i32);
+}
+
+/// User picked a step size: remember, persist, update the panel.
+pub fn select_zoom_step(percent: i32, panel: &PanelWindow, config: &Config) {
+    let Some(step) = u32::try_from(percent)
+        .ok()
+        .and_then(assistant_zoom::ZoomStep::from_percent)
+    else {
+        return;
+    };
+    ZOOM_STEP.set(step);
+    sync_zoom(panel);
+    if let Err(e) = config_with_step(config).save() {
+        eprintln!("config save failed: {e}");
+    }
+}
+
+fn config_with_step(config: &Config) -> Config {
+    let mut c = config.clone();
+    c.zoom.step = zoom_step().percent();
+    c
+}
 
 fn zoom_status(level: f32) -> String {
     format!("Zoom: {} %", (level * 100.0).round() as i32)
@@ -226,6 +265,7 @@ pub fn handle(cmd: Command, panel: &PanelWindow, config: &Config) {
         }
         Command::ToggleFeature(Feature::Zoom) => {
             panel.set_status_text(toggle_zoom().into());
+            sync_zoom(panel);
         }
         Command::ToggleFeature(Feature::Tts) => {
             let next = if is_speaking() {
@@ -249,12 +289,21 @@ pub fn handle(cmd: Command, panel: &PanelWindow, config: &Config) {
         Command::ToggleFeature(f) => {
             panel.set_status_text(toggle_feature(f).into());
         }
-        Command::ZoomIn => panel.set_status_text(with_zoom(Zoom::zoom_in).into()),
-        Command::ZoomOut => panel.set_status_text(with_zoom(Zoom::zoom_out).into()),
-        Command::ZoomReset => panel.set_status_text(with_zoom(Zoom::reset).into()),
+        Command::ZoomIn => {
+            panel.set_status_text(with_zoom(|z| z.zoom_in(zoom_step())).into());
+            sync_zoom(panel);
+        }
+        Command::ZoomOut => {
+            panel.set_status_text(with_zoom(|z| z.zoom_out(zoom_step())).into());
+            sync_zoom(panel);
+        }
+        Command::ZoomReset => {
+            panel.set_status_text(with_zoom(Zoom::reset).into());
+            sync_zoom(panel);
+        }
         Command::Quit => {
             shutdown();
-            if let Err(e) = config.save() {
+            if let Err(e) = config_with_step(config).save() {
                 eprintln!("config save failed: {e}");
             }
             let _ = slint::quit_event_loop();

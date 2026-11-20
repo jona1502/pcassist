@@ -36,10 +36,42 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     GetCursorPos, GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN,
 };
 
-/// Allowed zoom steps (1.0 = off).
-pub const LEVELS: [f32; 8] = [1.0, 1.25, 1.5, 2.0, 3.0, 4.0, 6.0, 8.0];
+pub const MIN_PERCENT: u32 = 100;
+pub const MAX_PERCENT: u32 = 800;
 pub const MIN_LEVEL: f32 = 1.0;
 pub const MAX_LEVEL: f32 = 8.0;
+
+/// Step size of `zoom_in` / `zoom_out`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ZoomStep {
+    /// 100 %
+    #[default]
+    Coarse,
+    /// 50 %
+    Medium,
+    /// 10 %
+    Fine,
+}
+
+impl ZoomStep {
+    pub fn percent(self) -> u32 {
+        match self {
+            ZoomStep::Coarse => 100,
+            ZoomStep::Medium => 50,
+            ZoomStep::Fine => 10,
+        }
+    }
+
+    /// Only 100, 50 and 10 are valid.
+    pub fn from_percent(p: u32) -> Option<ZoomStep> {
+        match p {
+            100 => Some(ZoomStep::Coarse),
+            50 => Some(ZoomStep::Medium),
+            10 => Some(ZoomStep::Fine),
+            _ => None,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ZoomError {
@@ -71,23 +103,26 @@ pub fn clamp_level(level: f32) -> f32 {
     }
 }
 
-/// Next step strictly above `level` (stays at the maximum).
-pub fn step_up(level: f32) -> f32 {
-    LEVELS
-        .iter()
-        .copied()
-        .find(|&l| l > level + 1e-3)
-        .unwrap_or(MAX_LEVEL)
+/// Zoom factor as integer percent (rounded, clamped to 100..=800).
+pub fn percent_of(level: f32) -> u32 {
+    (clamp_level(level) * 100.0).round() as u32
 }
 
-/// Next step strictly below `level` (stays at the minimum).
-pub fn step_down(level: f32) -> f32 {
-    LEVELS
-        .iter()
-        .rev()
-        .copied()
-        .find(|&l| l < level - 1e-3)
-        .unwrap_or(MIN_LEVEL)
+/// Next multiple of `step` strictly above `percent`, clamped to 100..=800.
+pub fn step_up(percent: u32, step: ZoomStep) -> u32 {
+    let s = step.percent();
+    ((percent / s + 1) * s).clamp(MIN_PERCENT, MAX_PERCENT)
+}
+
+/// Previous multiple of `step` strictly below `percent`, clamped to 100..=800.
+pub fn step_down(percent: u32, step: ZoomStep) -> u32 {
+    let s = step.percent();
+    let below = if percent.is_multiple_of(s) {
+        percent.saturating_sub(s)
+    } else {
+        percent / s * s
+    };
+    below.clamp(MIN_PERCENT, MAX_PERCENT)
 }
 
 /// Offset on one axis so the view centers on `cursor`, clamped to
@@ -188,12 +223,17 @@ impl Zoom {
         self.apply(level, x, y)
     }
 
-    pub fn zoom_in(&mut self) -> Result<(), ZoomError> {
-        self.set_level(step_up(self.level))
+    /// Current zoom in percent (100..=800).
+    pub fn percent(&self) -> u32 {
+        percent_of(self.level)
     }
 
-    pub fn zoom_out(&mut self) -> Result<(), ZoomError> {
-        self.set_level(step_down(self.level))
+    pub fn zoom_in(&mut self, step: ZoomStep) -> Result<(), ZoomError> {
+        self.set_level(step_up(self.percent(), step) as f32 / 100.0)
+    }
+
+    pub fn zoom_out(&mut self, step: ZoomStep) -> Result<(), ZoomError> {
+        self.set_level(step_down(self.percent(), step) as f32 / 100.0)
     }
 
     pub fn reset(&mut self) -> Result<(), ZoomError> {
@@ -262,28 +302,67 @@ mod tests {
     }
 
     #[test]
-    fn stepping() {
-        assert_eq!(step_up(1.0), 1.25);
-        assert_eq!(step_up(1.5), 2.0);
-        assert_eq!(step_up(2.5), 3.0);
-        assert_eq!(step_up(8.0), 8.0);
-        assert_eq!(step_down(8.0), 6.0);
-        assert_eq!(step_down(2.0), 1.5);
-        assert_eq!(step_down(2.5), 2.0);
-        assert_eq!(step_down(1.0), 1.0);
+    fn step_sizes() {
+        assert_eq!(ZoomStep::Coarse.percent(), 100);
+        assert_eq!(ZoomStep::Medium.percent(), 50);
+        assert_eq!(ZoomStep::Fine.percent(), 10);
+        assert_eq!(ZoomStep::from_percent(50), Some(ZoomStep::Medium));
+        assert_eq!(ZoomStep::from_percent(25), None);
     }
 
     #[test]
-    fn full_walk() {
-        let mut l = 1.0;
-        for expected in &LEVELS[1..] {
-            l = step_up(l);
-            assert_eq!(l, *expected);
+    fn stepping_coarse() {
+        assert_eq!(step_up(100, ZoomStep::Coarse), 200);
+        assert_eq!(step_up(200, ZoomStep::Coarse), 300);
+        assert_eq!(step_up(250, ZoomStep::Coarse), 300);
+        assert_eq!(step_down(300, ZoomStep::Coarse), 200);
+        assert_eq!(step_down(250, ZoomStep::Coarse), 200);
+    }
+
+    #[test]
+    fn stepping_medium_fine() {
+        assert_eq!(step_up(100, ZoomStep::Medium), 150);
+        assert_eq!(step_down(150, ZoomStep::Medium), 100);
+        assert_eq!(step_up(100, ZoomStep::Fine), 110);
+        assert_eq!(step_down(110, ZoomStep::Fine), 100);
+        assert_eq!(step_up(105, ZoomStep::Fine), 110);
+        assert_eq!(step_down(105, ZoomStep::Fine), 100);
+    }
+
+    #[test]
+    fn stepping_clamps_at_edges() {
+        for s in [ZoomStep::Coarse, ZoomStep::Medium, ZoomStep::Fine] {
+            assert_eq!(step_down(100, s), 100);
+            assert_eq!(step_up(800, s), 800);
+            assert_eq!(step_up(795, s), 800);
+            assert_eq!(step_down(50, s), 100);
+            assert_eq!(step_up(0, s), 100);
         }
-        for expected in LEVELS[..LEVELS.len() - 1].iter().rev() {
-            l = step_down(l);
-            assert_eq!(l, *expected);
+        assert_eq!(step_down(800, ZoomStep::Coarse), 700);
+        assert_eq!(step_down(800, ZoomStep::Fine), 790);
+    }
+
+    #[test]
+    fn full_walk_fine() {
+        let mut p = 100;
+        let mut n = 0;
+        while p < MAX_PERCENT {
+            p = step_up(p, ZoomStep::Fine);
+            n += 1;
         }
+        assert_eq!(n, 70);
+        while p > MIN_PERCENT {
+            p = step_down(p, ZoomStep::Fine);
+        }
+        assert_eq!(p, 100);
+    }
+
+    #[test]
+    fn percent_conversion() {
+        assert_eq!(percent_of(1.0), 100);
+        assert_eq!(percent_of(1.5), 150);
+        assert_eq!(percent_of(8.0), 800);
+        assert_eq!(percent_of(f32::NAN), 100);
     }
 
     #[test]
@@ -305,7 +384,7 @@ mod tests {
 
     #[test]
     fn offset_never_exceeds_range() {
-        for &l in &LEVELS {
+        for l in [1.0f32, 1.1, 1.5, 2.0, 3.0, 8.0] {
             for c in (-10..2000).step_by(37) {
                 let o = clamp_offset(c, 1920, l);
                 assert!(o >= 0 && o as f32 <= 1920.0 - 1920.0 / l + 0.001);
