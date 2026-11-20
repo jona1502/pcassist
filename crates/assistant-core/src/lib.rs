@@ -7,6 +7,8 @@ pub enum Feature {
     Tts,
     Mic,
     Contrast,
+    /// Mouse pointer highlight overlay.
+    MouseHighlight,
 }
 
 /// Commands the assistant can execute.

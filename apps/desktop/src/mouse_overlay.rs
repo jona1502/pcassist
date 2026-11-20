@@ -69,6 +69,19 @@ pub fn apply_config(cfg: &MouseConfig) {
     });
 }
 
+/// Aktuelle (bereinigte) Konfiguration, inkl. an/aus-Zustand. Zum Speichern.
+pub fn current_config() -> MouseConfig {
+    STATE.with_borrow(|s| s.cfg.clone())
+}
+
+/// Marker umschalten; liefert den neuen Zustand.
+pub fn toggle() -> bool {
+    let mut cfg = current_config();
+    cfg.enabled = !cfg.enabled;
+    apply_config(&cfg);
+    cfg.enabled
+}
+
 /// Marker ausblenden und Fenster zerstoeren. Vor dem Beenden aufrufen.
 pub fn shutdown() {
     STATE.with_borrow_mut(|s| s.running = None);
@@ -113,6 +126,14 @@ fn start(cfg: &MouseConfig) -> Option<Running> {
     // Das Fenster kann hier schon existieren; sonst versucht es `tick` erneut.
     running.try_style();
     Some(running)
+}
+
+impl Drop for Running {
+    /// Ein angezeigtes Slint-Fenster lebt weiter, bis es versteckt wird; ein
+    /// blosses Droppen der Komponente wuerde den Marker sichtbar lassen.
+    fn drop(&mut self) {
+        let _ = self.win.hide();
+    }
 }
 
 impl Running {

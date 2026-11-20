@@ -35,7 +35,7 @@ fn dock_right(panel: &PanelWindow) {
 }
 
 thread_local! {
-    static FEATURES: Cell<[bool; 4]> = const { Cell::new([false; 4]) };
+    static FEATURES: Cell<[bool; 5]> = const { Cell::new([false; 5]) };
     /// Lazily created on first zoom use; dropped in `shutdown`.
     static ZOOM_STEP: Cell<assistant_zoom::ZoomStep> = const { Cell::new(assistant_zoom::ZoomStep::Coarse) };
     static ZOOM: RefCell<Option<Zoom>> = const { RefCell::new(None) };
@@ -78,15 +78,21 @@ pub fn select_zoom_step(percent: i32, panel: &PanelWindow, config: &Config) {
     };
     ZOOM_STEP.set(step);
     sync_zoom(panel);
-    if let Err(e) = config_with_step(config).save() {
-        eprintln!("config save failed: {e}");
-    }
+    save_config(config);
 }
 
-fn config_with_step(config: &Config) -> Config {
+/// `config` plus the runtime-changed settings (zoom step, mouse highlight).
+fn current_config(config: &Config) -> Config {
     let mut c = config.clone();
     c.zoom.step = zoom_step().percent();
+    c.mouse = crate::mouse_overlay::current_config();
     c
+}
+
+fn save_config(config: &Config) {
+    if let Err(e) = current_config(config).save() {
+        eprintln!("config save failed: {e}");
+    }
 }
 
 fn zoom_status(level: f32) -> String {
@@ -248,6 +254,8 @@ fn toggle_feature(f: Feature) -> String {
         Feature::Tts => (1, "Vorlesen"),
         Feature::Mic => (2, "Mikrofon"),
         Feature::Contrast => (3, "Kontrast"),
+        // MouseHighlight is real (see `handle`); never reaches the placeholder.
+        Feature::MouseHighlight => (4, "Mausmarker"),
     };
     let mut state = FEATURES.get();
     state[idx] = !state[idx];
@@ -283,6 +291,16 @@ pub fn handle(cmd: Command, panel: &PanelWindow, config: &Config) {
         Command::ToggleFeature(Feature::Zoom) => {
             panel.set_status_text(toggle_zoom().into());
             sync_zoom(panel);
+        }
+        Command::ToggleFeature(Feature::MouseHighlight) => {
+            let on = crate::mouse_overlay::toggle();
+            save_config(config);
+            let msg = if on {
+                "Mausmarker an"
+            } else {
+                "Mausmarker aus"
+            };
+            panel.set_status_text(msg.into());
         }
         Command::ToggleFeature(Feature::Tts) => {
             let next = if is_speaking() {
@@ -320,9 +338,7 @@ pub fn handle(cmd: Command, panel: &PanelWindow, config: &Config) {
         }
         Command::Quit => {
             shutdown();
-            if let Err(e) = config_with_step(config).save() {
-                eprintln!("config save failed: {e}");
-            }
+            save_config(config);
             let _ = slint::quit_event_loop();
         }
     }

@@ -50,6 +50,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "tts" => Command::ToggleFeature(Feature::Tts),
             "mic" => Command::ToggleFeature(Feature::Mic),
             "contrast" => Command::ToggleFeature(Feature::Contrast),
+            "mouse" => Command::ToggleFeature(Feature::MouseHighlight),
             "settings" => Command::OpenSettings,
             _ => return,
         };

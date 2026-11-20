@@ -253,6 +253,13 @@ export component PanelWindow inherits Window {
                     description: "Hohen Kontrast umschalten";
                     clicked => { root.action-triggered("contrast"); }
                 }
+                Tile {
+                    icon: @image-url("icons/mouse.svg");
+                    side-label: "Mausmarker";
+                    a11y-label: "Mausmarker";
+                    description: "Markierung um den Mauszeiger umschalten";
+                    clicked => { root.action-triggered("mouse"); }
+                }
                 GroupHeader { title: "Programm"; }
                 Tile {
                     icon: @image-url("icons/gear.svg");
