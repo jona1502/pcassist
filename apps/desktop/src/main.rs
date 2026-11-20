@@ -3,6 +3,7 @@ mod platform;
 mod single_instance;
 mod tray;
 
+use assistant_config::Config;
 use assistant_core::Command;
 use slint::ComponentHandle;
 use tray_icon::menu::MenuEvent;
@@ -16,6 +17,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         single_instance::Role::Secondary => return Ok(()),
     };
 
+    let config = Config::load();
     let panel = PanelWindow::new()?;
     // Schliessen versteckt nur das Fenster; Beenden nur ueber das Tray-Menue.
     panel
@@ -23,9 +25,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .on_close_requested(|| slint::CloseRequestResponse::HideWindow);
 
     let weak_close = panel.as_weak();
+    let close_config = config.clone();
     panel.on_close_requested(move || {
         if let Some(p) = weak_close.upgrade() {
-            app::handle(Command::ClosePanel, &p);
+            app::handle(Command::ClosePanel, &p, &close_config);
         }
     });
 
@@ -40,7 +43,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         move || {
             let Some(panel) = weak.upgrade() else { return };
             while let Ok(cmd) = single_rx.try_recv() {
-                app::handle(cmd, &panel);
+                app::handle(cmd, &panel, &config);
             }
             while let Ok(ev) = MenuEvent::receiver().try_recv() {
                 let cmd = if ev.id == tray.open_id {
@@ -52,7 +55,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     continue;
                 };
-                app::handle(cmd, &panel);
+                app::handle(cmd, &panel, &config);
             }
             while let Ok(ev) = TrayIconEvent::receiver().try_recv() {
                 if let TrayIconEvent::Click {
@@ -61,7 +64,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ..
                 } = ev
                 {
-                    app::handle(Command::TogglePanel, &panel);
+                    app::handle(Command::TogglePanel, &panel, &config);
                 }
             }
         },
