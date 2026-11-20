@@ -20,6 +20,7 @@ pub fn handle(cmd: Command, panel: &PanelWindow) {
         Command::OpenPanel => {
             dock_right(panel);
             let _ = panel.show();
+            panel.invoke_focus_panel();
         }
         Command::ClosePanel => {
             let _ = panel.hide();
