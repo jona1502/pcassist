@@ -10,7 +10,8 @@ assistant-core = { path = "../../crates/assistant-core" }
 assistant-tts = { path = "../../crates/assistant-tts" }
 assistant-zoom = { path = "../../crates/assistant-zoom" }
 global-hotkey = "0.10.0"
-slint = "1.19.0"
+raw-window-handle = "0.6"
+slint = { version = "1.19.0", features = ["raw-window-handle-06"] }
 tray-icon = "0.26.1"
 
 [build-dependencies]

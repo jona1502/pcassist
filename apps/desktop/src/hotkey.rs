@@ -3,7 +3,7 @@
 //! combos). Windows' own Win+Plus / Win+Minus magnifier shortcuts are not touched.
 
 use assistant_config::HotkeyConfig;
-use assistant_core::Command;
+use assistant_core::{Command, Feature};
 use global_hotkey::hotkey::HotKey;
 use global_hotkey::GlobalHotKeyManager;
 use std::cell::RefCell;
@@ -108,6 +108,11 @@ fn bind(manager: &GlobalHotKeyManager, cfg: &HotkeyConfig) -> Vec<(HotKey, Comma
             Command::SpeakSelection,
         ),
         (&cfg.speak_stop, &defaults.speak_stop, Command::SpeakStop),
+        (
+            &cfg.toggle_mouse,
+            &defaults.toggle_mouse,
+            Command::ToggleFeature(Feature::MouseHighlight),
+        ),
     ];
     let mut bindings = Vec::new();
     for (s, default, cmd) in wanted {
@@ -150,6 +155,7 @@ mod tests {
             &d.zoom_reset,
             &d.speak_selection,
             &d.speak_stop,
+            &d.toggle_mouse,
         ]
         .iter()
         .map(|s| HotKey::from_str(s).expect("default parses").id())

@@ -62,16 +62,17 @@ fn choice_from_option(o: Option<&str>) -> String {
 }
 
 /// German names of the hotkey fields, in `hotkey_fields` order.
-const HOTKEY_LABELS: [&str; 6] = [
+const HOTKEY_LABELS: [&str; 7] = [
     "Panel ein/aus",
     "Zoom vergrößern",
     "Zoom verkleinern",
     "Zoom zurücksetzen",
     "Vorlesen starten",
     "Vorlesen stoppen",
+    "Mausmarker umschalten",
 ];
 
-fn hotkey_fields(h: &HotkeyConfig) -> [String; 6] {
+fn hotkey_fields(h: &HotkeyConfig) -> [String; 7] {
     [
         h.toggle_panel.clone(),
         h.zoom_in.clone(),
@@ -79,11 +80,13 @@ fn hotkey_fields(h: &HotkeyConfig) -> [String; 6] {
         h.zoom_reset.clone(),
         h.speak_selection.clone(),
         h.speak_stop.clone(),
+        h.toggle_mouse.clone(),
     ]
 }
 
-fn hotkey_from_fields(f: [String; 6]) -> HotkeyConfig {
-    let [toggle_panel, zoom_in, zoom_out, zoom_reset, speak_selection, speak_stop] = f;
+fn hotkey_from_fields(f: [String; 7]) -> HotkeyConfig {
+    let [toggle_panel, zoom_in, zoom_out, zoom_reset, speak_selection, speak_stop, toggle_mouse] =
+        f;
     HotkeyConfig {
         toggle_panel,
         zoom_in,
@@ -91,12 +94,13 @@ fn hotkey_from_fields(f: [String; 6]) -> HotkeyConfig {
         zoom_reset,
         speak_selection,
         speak_stop,
+        toggle_mouse,
     }
 }
 
 /// Takes the edited hotkeys over; invalid or duplicate ones keep the old value.
 /// Returns the result and the labels of the rejected fields.
-fn merge_hotkeys(old: &HotkeyConfig, edited: [String; 6]) -> (HotkeyConfig, Vec<&'static str>) {
+fn merge_hotkeys(old: &HotkeyConfig, edited: [String; 7]) -> (HotkeyConfig, Vec<&'static str>) {
     let old_fields = hotkey_fields(old);
     let mut result: Vec<String> = Vec::new();
     let mut ids: Vec<u32> = Vec::new();
@@ -118,7 +122,7 @@ fn merge_hotkeys(old: &HotkeyConfig, edited: [String; 6]) -> (HotkeyConfig, Vec<
             }
         }
     }
-    let fields: [String; 6] = result.try_into().expect("six hotkey fields");
+    let fields: [String; 7] = result.try_into().expect("seven hotkey fields");
     (hotkey_from_fields(fields), rejected)
 }
 
@@ -193,13 +197,14 @@ fn populate(win: &SettingsWindow, cfg: &Config) {
     win.set_input_device(choice_from_option(input).into());
     win.set_output_device(choice_from_option(output).into());
     win.set_output_note(OUTPUT_NOTE.into());
-    let [toggle, zin, zout, zreset, speak, stop] = hotkey_fields(&cfg.hotkeys);
+    let [toggle, zin, zout, zreset, speak, stop, mouse] = hotkey_fields(&cfg.hotkeys);
     win.set_hk_toggle(toggle.into());
     win.set_hk_zoom_in(zin.into());
     win.set_hk_zoom_out(zout.into());
     win.set_hk_zoom_reset(zreset.into());
     win.set_hk_speak(speak.into());
     win.set_hk_stop(stop.into());
+    win.set_hk_mouse(mouse.into());
     win.set_always_on_top_setting(cfg.panel.always_on_top);
     win.set_status_text("".into());
 }
@@ -266,6 +271,7 @@ fn save(win: &SettingsWindow, panel: &PanelWindow) {
             win.get_hk_zoom_reset().to_string(),
             win.get_hk_speak().to_string(),
             win.get_hk_stop().to_string(),
+            win.get_hk_mouse().to_string(),
         ],
     );
     cfg.hotkeys = hotkeys;

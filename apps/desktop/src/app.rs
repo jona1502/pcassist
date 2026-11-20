@@ -35,7 +35,7 @@ fn dock_right(panel: &PanelWindow) {
 }
 
 thread_local! {
-    static FEATURES: Cell<[bool; 4]> = const { Cell::new([false; 4]) };
+    static FEATURES: Cell<[bool; 5]> = const { Cell::new([false; 5]) };
     /// Lazily created on first zoom use; dropped in `shutdown`.
     static ZOOM_STEP: Cell<assistant_zoom::ZoomStep> = const { Cell::new(assistant_zoom::ZoomStep::Coarse) };
     static ZOOM: RefCell<Option<Zoom>> = const { RefCell::new(None) };
@@ -141,6 +141,7 @@ pub fn select_zoom_step(percent: i32, panel: &PanelWindow) {
 fn persist_current() {
     let mut c = crate::settings::current();
     c.zoom.step = zoom_step().percent();
+    c.mouse = crate::mouse_overlay::current_config();
     crate::settings::set_current(c.clone());
     if let Err(e) = c.save() {
         eprintln!("config save failed: {e}");
@@ -297,6 +298,7 @@ pub fn tick(panel: &PanelWindow) {
 /// Resets the screen to 100 % (drops `Zoom`). Call before exit.
 pub fn shutdown() {
     ZOOM.with_borrow_mut(|slot| *slot = None);
+    crate::mouse_overlay::shutdown();
     // Drop stops speech and joins the worker thread.
     TTS.with_borrow_mut(|slot| *slot = None);
 }
@@ -310,6 +312,8 @@ fn toggle_feature(f: Feature) -> String {
         Feature::Tts => (1, "Vorlesen"),
         Feature::Mic => (2, "Mikrofon"),
         Feature::Contrast => (3, "Kontrast"),
+        // MouseHighlight is real (see `handle`); never reaches the placeholder.
+        Feature::MouseHighlight => (4, "Mausmarker"),
     };
     let mut state = FEATURES.get();
     state[idx] = !state[idx];
@@ -343,6 +347,16 @@ pub fn handle(cmd: Command, panel: &PanelWindow) {
         Command::ToggleFeature(Feature::Zoom) => {
             panel.set_status_text(toggle_zoom().into());
             sync_zoom(panel);
+        }
+        Command::ToggleFeature(Feature::MouseHighlight) => {
+            let on = crate::mouse_overlay::toggle();
+            persist_current();
+            let msg = if on {
+                "Mausmarker an"
+            } else {
+                "Mausmarker aus"
+            };
+            panel.set_status_text(msg.into());
         }
         Command::ToggleFeature(Feature::Tts) => {
             let next = if is_speaking() {

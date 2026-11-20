@@ -1,5 +1,6 @@
 mod app;
 mod hotkey;
+mod mouse_overlay;
 mod platform;
 mod selection;
 mod settings;
@@ -50,6 +51,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "tts" => Command::ToggleFeature(Feature::Tts),
             "mic" => Command::ToggleFeature(Feature::Mic),
             "contrast" => Command::ToggleFeature(Feature::Contrast),
+            "mouse" => Command::ToggleFeature(Feature::MouseHighlight),
             "settings" => Command::OpenSettings,
             _ => return,
         };
@@ -65,6 +67,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
     app::sync_zoom(&panel);
+    mouse_overlay::apply_config(&config.mouse);
 
     // Tray nach Backend-Init (PanelWindow) erstellen und am Leben halten.
     let tray = tray::create()?;

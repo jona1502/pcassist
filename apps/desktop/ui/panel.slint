@@ -3,6 +3,8 @@
 // Leiste ist das abgerundete Rectangle. Auf Windows (winit + femtovg) wird das
 // Fenster dann mit Alpha-Kanal erzeugt.
 
+export { MouseOverlay } from "overlay.slint";
+
 global Dock {
     out property <length> width: 196px;
     out property <length> bar-padding: 6px;
@@ -251,6 +253,13 @@ export component PanelWindow inherits Window {
                     a11y-label: "Kontrast";
                     description: "Hohen Kontrast umschalten";
                     clicked => { root.action-triggered("contrast"); }
+                }
+                Tile {
+                    icon: @image-url("icons/mouse.svg");
+                    side-label: "Mausmarker";
+                    a11y-label: "Mausmarker";
+                    description: "Markierung um den Mauszeiger umschalten";
+                    clicked => { root.action-triggered("mouse"); }
                 }
                 GroupHeader { title: "Programm"; }
                 Tile {

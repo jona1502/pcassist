@@ -1,0 +1,91 @@
+// Mausmarker: rahmenloses, transparentes Fenster, das Rust per Timer an den
+// Mauszeiger heftet. Klick-Durchlass und "nicht aktivieren" setzt Rust ueber
+// Win32-Erweiterungsstile (siehe mouse_overlay.rs); hier steht nur das Aussehen.
+// Alle Werte kommen aus der Config (MouseConfig).
+
+export component MouseOverlay inherits Window {
+    title: "Mausmarker";
+    no-frame: true;
+    always-on-top: true;
+    background: transparent;
+    accessible-role: none;
+
+    // 0 = Ring, 1 = gefuellt, 2 = Fadenkreuz
+    in property <int> shape: 0;
+    // Farbe inklusive Deckkraft (Alpha).
+    in property <color> mark-color: #ffd23fcc;
+    in property <length> diameter: 64px;
+    in property <length> thickness: 4px;
+    in property <color> click-color: #ff4d4d;
+    // Fortschritt des Klick-Impulses 0..1; >= 1 heisst: kein Impuls.
+    in property <float> pulse: 1.0;
+
+    property <length> cx: root.width / 2;
+    property <length> cy: root.height / 2;
+    property <length> half: root.diameter / 2;
+    // Luecke in der Mitte des Fadenkreuzes, damit der Zeiger sichtbar bleibt.
+    property <length> gap: max(6px, root.diameter * 0.12);
+
+    if root.shape == 0: Rectangle {
+        x: root.cx - root.half;
+        y: root.cy - root.half;
+        width: root.diameter;
+        height: root.diameter;
+        border-radius: root.half;
+        border-width: root.thickness;
+        border-color: root.mark-color;
+    }
+
+    if root.shape == 1: Rectangle {
+        x: root.cx - root.half;
+        y: root.cy - root.half;
+        width: root.diameter;
+        height: root.diameter;
+        border-radius: root.half;
+        background: root.mark-color;
+    }
+
+    if root.shape == 2: Rectangle {
+        width: root.width;
+        height: root.height;
+        Rectangle { // links
+            x: root.cx - root.half;
+            y: root.cy - root.thickness / 2;
+            width: root.half - root.gap;
+            height: root.thickness;
+            background: root.mark-color;
+        }
+        Rectangle { // rechts
+            x: root.cx + root.gap;
+            y: root.cy - root.thickness / 2;
+            width: root.half - root.gap;
+            height: root.thickness;
+            background: root.mark-color;
+        }
+        Rectangle { // oben
+            x: root.cx - root.thickness / 2;
+            y: root.cy - root.half;
+            width: root.thickness;
+            height: root.half - root.gap;
+            background: root.mark-color;
+        }
+        Rectangle { // unten
+            x: root.cx - root.thickness / 2;
+            y: root.cy + root.gap;
+            width: root.thickness;
+            height: root.half - root.gap;
+            background: root.mark-color;
+        }
+    }
+
+    // Klick-Impuls: gefuellte Scheibe, schrumpft auf 45 % und blendet aus.
+    if root.pulse < 1.0: Rectangle {
+        property <length> d: root.diameter * (1.0 - 0.55 * root.pulse);
+        x: root.cx - self.d / 2;
+        y: root.cy - self.d / 2;
+        width: self.d;
+        height: self.d;
+        border-radius: self.d / 2;
+        background: root.click-color.with-alpha(0.85 * (1.0 - root.pulse));
+    }
+}

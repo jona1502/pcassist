@@ -198,6 +198,7 @@ export component SettingsWindow inherits Window {
     in-out property <string> hk-zoom-reset;
     in-out property <string> hk-speak;
     in-out property <string> hk-stop;
+    in-out property <string> hk-mouse;
     in-out property <bool> always-on-top-setting: true;
     in property <string> output-note;
     in property <string> status-text;
@@ -376,6 +377,7 @@ export component SettingsWindow inherits Window {
                             HotkeyRow { label: "Zoom zurücksetzen"; value <=> root.hk-zoom-reset; validate(s) => { return root.validate-hotkey(s); } }
                             HotkeyRow { label: "Vorlesen starten"; value <=> root.hk-speak; validate(s) => { return root.validate-hotkey(s); } }
                             HotkeyRow { label: "Vorlesen stoppen"; value <=> root.hk-stop; validate(s) => { return root.validate-hotkey(s); } }
+                            HotkeyRow { label: "Mausmarker umschalten"; value <=> root.hk-mouse; validate(s) => { return root.validate-hotkey(s); } }
                         }
 
                         if root.section == 4: VerticalLayout {
