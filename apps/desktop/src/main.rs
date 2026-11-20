@@ -2,6 +2,7 @@ mod app;
 mod hotkey;
 mod platform;
 mod selection;
+mod settings;
 mod single_instance;
 mod tray;
 
@@ -21,23 +22,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let config = Config::load();
-    app::init_zoom_step(&config);
+    app::init_runtime(&config);
+    settings::init(config.clone());
     let panel = PanelWindow::new()?;
+    panel.set_keep_on_top(config.panel.always_on_top);
     // Schliessen versteckt nur das Fenster; Beenden nur ueber das Tray-Menue.
     panel
         .window()
         .on_close_requested(|| slint::CloseRequestResponse::HideWindow);
 
     let weak_close = panel.as_weak();
-    let close_config = config.clone();
     panel.on_close_requested(move || {
         if let Some(p) = weak_close.upgrade() {
-            app::handle(Command::ClosePanel, &p, &close_config);
+            app::handle(Command::ClosePanel, &p);
         }
     });
 
     let weak_action = panel.as_weak();
-    let action_config = config.clone();
     panel.on_action_triggered(move |id| {
         let cmd = match id.as_str() {
             "zoom" => Command::ToggleFeature(Feature::Zoom),
@@ -53,15 +54,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             _ => return,
         };
         if let Some(p) = weak_action.upgrade() {
-            app::handle(cmd, &p, &action_config);
+            app::handle(cmd, &p);
         }
     });
 
     let weak_step = panel.as_weak();
-    let step_config = config.clone();
     panel.on_zoom_step_selected(move |p| {
         if let Some(panel) = weak_step.upgrade() {
-            app::select_zoom_step(p, &panel, &step_config);
+            app::select_zoom_step(p, &panel);
         }
     });
     app::sync_zoom(&panel);
@@ -70,7 +70,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tray = tray::create()?;
 
     // Manager must stay alive for the hotkey to remain registered.
-    let hotkey = hotkey::register(&config.hotkeys);
+    hotkey::install(hotkey::register(&config.hotkeys));
 
     let weak = panel.as_weak();
     let timer = slint::Timer::default();
@@ -79,9 +79,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::time::Duration::from_millis(50),
         move || {
             let Some(panel) = weak.upgrade() else { return };
-            app::tick(&panel, &config);
+            app::tick(&panel);
             while let Ok(cmd) = single_rx.try_recv() {
-                app::handle(cmd, &panel, &config);
+                app::handle(cmd, &panel);
             }
             while let Ok(ev) = MenuEvent::receiver().try_recv() {
                 let cmd = if ev.id == tray.open_id {
@@ -93,14 +93,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     continue;
                 };
-                app::handle(cmd, &panel, &config);
+                app::handle(cmd, &panel);
             }
             while let Ok(ev) = GlobalHotKeyEvent::receiver().try_recv() {
                 if ev.state != HotKeyState::Pressed {
                     continue;
                 }
-                if let Some(cmd) = hotkey.command_for(ev.id) {
-                    app::handle(cmd, &panel, &config);
+                if let Some(cmd) = hotkey::command_for(ev.id) {
+                    app::handle(cmd, &panel);
                 }
             }
             while let Ok(ev) = TrayIconEvent::receiver().try_recv() {
@@ -110,7 +110,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ..
                 } = ev
                 {
-                    app::handle(Command::TogglePanel, &panel, &config);
+                    app::handle(Command::TogglePanel, &panel);
                 }
             }
         },

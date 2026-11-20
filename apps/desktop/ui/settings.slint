@@ -369,7 +369,7 @@ export component SettingsWindow inherits Window {
                         if root.section == 3: VerticalLayout {
                             spacing: 10px;
                             SectionTitle { text: "Tastenkürzel"; }
-                            Hint { text: "Format zum Beispiel ctrl+alt+p. Ungültige Eingaben werden nicht gespeichert. Änderung wirkt nach Neustart."; }
+                            Hint { text: "Format zum Beispiel ctrl+alt+p. Ungültige Eingaben werden nicht gespeichert. Änderungen gelten sofort nach Speichern."; }
                             HotkeyRow { label: "Panel ein/aus"; value <=> root.hk-toggle; validate(s) => { return root.validate-hotkey(s); } }
                             HotkeyRow { label: "Zoom vergrößern"; value <=> root.hk-zoom-in; validate(s) => { return root.validate-hotkey(s); } }
                             HotkeyRow { label: "Zoom verkleinern"; value <=> root.hk-zoom-out; validate(s) => { return root.validate-hotkey(s); } }

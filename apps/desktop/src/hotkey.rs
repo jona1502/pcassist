@@ -6,6 +6,7 @@ use assistant_config::HotkeyConfig;
 use assistant_core::Command;
 use global_hotkey::hotkey::HotKey;
 use global_hotkey::GlobalHotKeyManager;
+use std::cell::RefCell;
 use std::str::FromStr;
 
 /// Parses the configured string; invalid input falls back to `default`.
@@ -16,10 +17,15 @@ pub fn parse(s: &str, default: &str) -> HotKey {
     })
 }
 
+/// True if `s` is a hotkey string the manager can parse, e.g. "ctrl+alt+p".
+pub fn is_valid(s: &str) -> bool {
+    HotKey::from_str(s).is_ok()
+}
+
 /// Registered hotkeys. The manager must stay alive for them to remain active.
 pub struct Hotkeys {
-    _manager: Option<GlobalHotKeyManager>,
-    bindings: Vec<(u32, Command)>,
+    manager: Option<GlobalHotKeyManager>,
+    bindings: Vec<(HotKey, Command)>,
 }
 
 impl Hotkeys {
@@ -27,14 +33,65 @@ impl Hotkeys {
     pub fn command_for(&self, id: u32) -> Option<Command> {
         self.bindings
             .iter()
-            .find_map(|&(i, c)| (i == id).then_some(c))
+            .find_map(|&(k, c)| (k.id() == id).then_some(c))
     }
+
+    /// Replaces all registrations with the ones from `cfg` (after saving settings).
+    pub fn reregister(&mut self, cfg: &HotkeyConfig) {
+        let Some(manager) = &self.manager else { return };
+        for (k, _) in self.bindings.drain(..) {
+            let _ = manager.unregister(k);
+        }
+        self.bindings = bind(manager, cfg);
+    }
+}
+
+thread_local! {
+    static HOTKEYS: RefCell<Option<Hotkeys>> = const { RefCell::new(None) };
+}
+
+/// Keeps the registered hotkeys alive (main thread) and makes them reachable
+/// for `command_for` and `reregister_all`.
+pub fn install(h: Hotkeys) {
+    HOTKEYS.with_borrow_mut(|slot| *slot = Some(h));
+}
+
+/// Command for a pressed hotkey id.
+pub fn command_for(id: u32) -> Option<Command> {
+    HOTKEYS.with_borrow(|h| h.as_ref().and_then(|h| h.command_for(id)))
+}
+
+/// Re-registers all hotkeys from the config.
+pub fn reregister_all(cfg: &HotkeyConfig) {
+    HOTKEYS.with_borrow_mut(|h| {
+        if let Some(h) = h {
+            h.reregister(cfg);
+        }
+    });
 }
 
 /// Registers all configured hotkeys. A failing hotkey only logs a warning
 /// (e.g. already taken); the others stay active.
 /// Must be called on the main thread after the event loop backend exists.
 pub fn register(cfg: &HotkeyConfig) -> Hotkeys {
+    let manager = match GlobalHotKeyManager::new() {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("pcassist: global hotkey unavailable: {e}");
+            return Hotkeys {
+                manager: None,
+                bindings: Vec::new(),
+            };
+        }
+    };
+    let bindings = bind(&manager, cfg);
+    Hotkeys {
+        manager: Some(manager),
+        bindings,
+    }
+}
+
+fn bind(manager: &GlobalHotKeyManager, cfg: &HotkeyConfig) -> Vec<(HotKey, Command)> {
     let defaults = HotkeyConfig::default();
     let wanted = [
         (
@@ -52,28 +109,15 @@ pub fn register(cfg: &HotkeyConfig) -> Hotkeys {
         ),
         (&cfg.speak_stop, &defaults.speak_stop, Command::SpeakStop),
     ];
-    let manager = match GlobalHotKeyManager::new() {
-        Ok(m) => m,
-        Err(e) => {
-            eprintln!("pcassist: global hotkey unavailable: {e}");
-            return Hotkeys {
-                _manager: None,
-                bindings: Vec::new(),
-            };
-        }
-    };
     let mut bindings = Vec::new();
     for (s, default, cmd) in wanted {
         let hotkey = parse(s, default);
         match manager.register(hotkey) {
-            Ok(()) => bindings.push((hotkey.id(), cmd)),
+            Ok(()) => bindings.push((hotkey, cmd)),
             Err(e) => eprintln!("pcassist: could not register hotkey {s:?}: {e}"),
         }
     }
-    Hotkeys {
-        _manager: Some(manager),
-        bindings,
-    }
+    bindings
 }
 
 #[cfg(test)]
@@ -86,6 +130,14 @@ mod tests {
     fn invalid_falls_back() {
         assert_eq!(parse("nonsense+++", DEFAULT), parse(DEFAULT, DEFAULT));
         assert_ne!(parse("ctrl+alt+o", DEFAULT), parse(DEFAULT, DEFAULT));
+    }
+
+    #[test]
+    fn validity() {
+        assert!(is_valid("ctrl+alt+p"));
+        assert!(is_valid("ctrl+alt+Equal"));
+        assert!(!is_valid("nonsense+++"));
+        assert!(!is_valid(""));
     }
 
     #[test]
