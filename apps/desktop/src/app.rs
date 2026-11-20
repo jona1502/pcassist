@@ -1,9 +1,11 @@
 use crate::PanelWindow;
 use assistant_config::Config;
 use assistant_core::{Command, Feature};
+use assistant_tts::Tts;
 use assistant_zoom::Zoom;
 use slint::{ComponentHandle, PhysicalPosition, PhysicalSize};
 use std::cell::{Cell, RefCell};
+use std::sync::mpsc::{Receiver, TryRecvError};
 
 /// Panel an rechten Rand des Arbeitsbereichs (Monitor unter Cursor) docken.
 fn dock_right(panel: &PanelWindow, panel_width: u32) {
@@ -20,6 +22,11 @@ thread_local! {
     static FEATURES: Cell<[bool; 4]> = const { Cell::new([false; 4]) };
     /// Lazily created on first zoom use; dropped in `shutdown`.
     static ZOOM: RefCell<Option<Zoom>> = const { RefCell::new(None) };
+    /// Lazily created on first speech; dropped in `shutdown`.
+    static TTS: RefCell<Option<Tts>> = const { RefCell::new(None) };
+    /// Running selection capture (worker thread result).
+    static CAPTURE: RefCell<Option<Receiver<Option<String>>>> = const { RefCell::new(None) };
+    static PAUSED: Cell<bool> = const { Cell::new(false) };
 }
 
 const ZOOM_UNAVAILABLE: &str = "Zoom nicht verfügbar";
@@ -62,8 +69,92 @@ fn toggle_zoom() -> String {
     })
 }
 
-/// Called from the 50 ms timer: keeps the zoomed view on the cursor.
-pub fn tick() {
+const TTS_UNAVAILABLE: &str = "Vorlesen nicht verfügbar";
+const TTS_NO_SELECTION: &str = "Kein Text markiert oder App unterstützt Kopieren nicht";
+const TTS_RUNNING: &str = "Vorlesen läuft";
+
+/// Runs `f` on the lazily created `Tts`; `None` if unavailable.
+fn with_tts<R>(rate: i32, f: impl FnOnce(&Tts) -> R) -> Option<R> {
+    TTS.with_borrow_mut(|slot| {
+        if slot.is_none() {
+            match Tts::new() {
+                Ok(t) => {
+                    t.set_rate(rate);
+                    *slot = Some(t);
+                }
+                Err(e) => {
+                    eprintln!("pcassist: tts init failed: {e}");
+                    return None;
+                }
+            }
+        }
+        slot.as_ref().map(f)
+    })
+}
+
+fn is_speaking() -> bool {
+    TTS.with_borrow(|t| t.as_ref().is_some_and(Tts::is_speaking))
+}
+
+/// Starts a background capture; returns the status text, or `None` if one is running.
+fn speak_selection() -> Option<String> {
+    if CAPTURE.with_borrow(Option::is_some) {
+        return None;
+    }
+    CAPTURE.with_borrow_mut(|c| *c = Some(crate::selection::capture_async()));
+    Some("Text wird gelesen…".into())
+}
+
+fn speak_pause(rate: i32) -> Option<&'static str> {
+    if !is_speaking() {
+        return None;
+    }
+    let paused = !PAUSED.get();
+    if with_tts(rate, |t| if paused { t.pause() } else { t.resume() }).is_none() {
+        return Some(TTS_UNAVAILABLE);
+    }
+    PAUSED.set(paused);
+    Some(if paused {
+        "Vorlesen pausiert"
+    } else {
+        TTS_RUNNING
+    })
+}
+
+fn speak_stop() -> &'static str {
+    PAUSED.set(false);
+    TTS.with_borrow(|t| {
+        if let Some(t) = t {
+            t.stop();
+        }
+    });
+    "Vorlesen gestoppt"
+}
+
+/// Called from the 50 ms timer: finished selection capture, zoom follow.
+pub fn tick(panel: &PanelWindow, config: &Config) {
+    let done = CAPTURE.with_borrow_mut(|slot| {
+        let res = match slot.as_ref()?.try_recv() {
+            Ok(text) => text,
+            Err(TryRecvError::Disconnected) => None,
+            Err(TryRecvError::Empty) => return None,
+        };
+        *slot = None;
+        Some(res)
+    });
+    if let Some(text) = done {
+        let msg = match text {
+            Some(t) => {
+                PAUSED.set(false);
+                match with_tts(config.tts.rate, |tts| tts.speak(&t)) {
+                    Some(()) => TTS_RUNNING,
+                    None => TTS_UNAVAILABLE,
+                }
+            }
+            None => TTS_NO_SELECTION,
+        };
+        panel.set_status_text(msg.into());
+    }
     ZOOM.with_borrow_mut(|slot| {
         if let Some(z) = slot
             .as_mut()
@@ -79,6 +170,8 @@ pub fn tick() {
 /// Resets the screen to 100 % (drops `Zoom`). Call before exit.
 pub fn shutdown() {
     ZOOM.with_borrow_mut(|slot| *slot = None);
+    // Drop stops speech and joins the worker thread.
+    TTS.with_borrow_mut(|slot| *slot = None);
 }
 
 /// Platzhalter: schaltet Feature-Flag um, liefert Statustext.
@@ -86,6 +179,7 @@ fn toggle_feature(f: Feature) -> String {
     let (idx, name) = match f {
         // Zoom is real (see `toggle_zoom`); never reaches the placeholder.
         Feature::Zoom => (0, "Zoom"),
+        // Tts is real (see `handle`); never reaches the placeholder.
         Feature::Tts => (1, "Vorlesen"),
         Feature::Mic => (2, "Mikrofon"),
         Feature::Contrast => (3, "Kontrast"),
@@ -121,6 +215,25 @@ pub fn handle(cmd: Command, panel: &PanelWindow, config: &Config) {
         Command::ToggleFeature(Feature::Zoom) => {
             panel.set_status_text(toggle_zoom().into());
         }
+        Command::ToggleFeature(Feature::Tts) => {
+            let next = if is_speaking() {
+                Command::SpeakStop
+            } else {
+                Command::SpeakSelection
+            };
+            handle(next, panel, config);
+        }
+        Command::SpeakSelection => {
+            if let Some(msg) = speak_selection() {
+                panel.set_status_text(msg.into());
+            }
+        }
+        Command::SpeakPause => {
+            if let Some(msg) = speak_pause(config.tts.rate) {
+                panel.set_status_text(msg.into());
+            }
+        }
+        Command::SpeakStop => panel.set_status_text(speak_stop().into()),
         Command::ToggleFeature(f) => {
             panel.set_status_text(toggle_feature(f).into());
         }

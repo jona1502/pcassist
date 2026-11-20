@@ -9,6 +9,14 @@ use std::path::{Path, PathBuf};
 pub struct Config {
     pub panel: PanelConfig,
     pub hotkeys: HotkeyConfig,
+    pub tts: TtsConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TtsConfig {
+    /// Speech rate -10..=10, 0 = normal.
+    pub rate: i32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -22,6 +30,10 @@ pub struct HotkeyConfig {
     pub zoom_out: String,
     /// Reset zoom to 100 %, e.g. "ctrl+alt+0".
     pub zoom_reset: String,
+    /// Read the selected text aloud, e.g. "ctrl+alt+r".
+    pub speak_selection: String,
+    /// Stop speech, e.g. "ctrl+alt+s".
+    pub speak_stop: String,
 }
 
 impl Default for HotkeyConfig {
@@ -31,6 +43,8 @@ impl Default for HotkeyConfig {
             zoom_in: "ctrl+alt+Equal".into(),
             zoom_out: "ctrl+alt+Minus".into(),
             zoom_reset: "ctrl+alt+0".into(),
+            speak_selection: "ctrl+alt+r".into(),
+            speak_stop: "ctrl+alt+s".into(),
         }
     }
 }
@@ -150,7 +164,18 @@ width = 420
         assert_eq!(c.hotkeys.zoom_in, "ctrl+alt+Equal");
         assert_eq!(c.hotkeys.zoom_out, "ctrl+alt+Minus");
         assert_eq!(c.hotkeys.zoom_reset, "ctrl+alt+0");
+        assert_eq!(c.hotkeys.speak_selection, "ctrl+alt+r");
+        assert_eq!(c.hotkeys.speak_stop, "ctrl+alt+s");
+        assert_eq!(c.tts.rate, 0);
         assert_eq!(c.panel.width, 420);
+    }
+
+    #[test]
+    fn tts_rate_loads() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("c.toml");
+        std::fs::write(&p, "[tts]\nrate = 4\n").unwrap();
+        assert_eq!(Config::load_from(&p).tts.rate, 4);
     }
 
     #[test]
