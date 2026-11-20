@@ -63,6 +63,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::time::Duration::from_millis(50),
         move || {
             let Some(panel) = weak.upgrade() else { return };
+            app::tick();
             while let Ok(cmd) = single_rx.try_recv() {
                 app::handle(cmd, &panel, &config);
             }
@@ -100,5 +101,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     slint::run_event_loop_until_quit()?;
     drop(timer);
+    app::shutdown();
     Ok(())
 }

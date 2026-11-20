@@ -3633,6 +3633,7 @@ version = "0.1.0"
 dependencies = [
  "assistant-config",
  "assistant-core",
+ "assistant-zoom",
  "global-hotkey",
  "slint",
  "slint-build",

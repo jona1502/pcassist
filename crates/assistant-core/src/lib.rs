@@ -17,5 +17,8 @@ pub enum Command {
     TogglePanel,
     OpenSettings,
     ToggleFeature(Feature),
+    ZoomIn,
+    ZoomOut,
+    ZoomReset,
     Quit,
 }
