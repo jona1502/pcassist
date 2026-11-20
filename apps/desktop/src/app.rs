@@ -21,6 +21,7 @@ fn dock_right(panel: &PanelWindow, panel_width: u32) {
 thread_local! {
     static FEATURES: Cell<[bool; 4]> = const { Cell::new([false; 4]) };
     /// Lazily created on first zoom use; dropped in `shutdown`.
+    static ZOOM_STEP: Cell<assistant_zoom::ZoomStep> = const { Cell::new(assistant_zoom::ZoomStep::Coarse) };
     static ZOOM: RefCell<Option<Zoom>> = const { RefCell::new(None) };
     /// Lazily created on first speech; dropped in `shutdown`.
     static TTS: RefCell<Option<Tts>> = const { RefCell::new(None) };
@@ -33,6 +34,10 @@ thread_local! {
 
 const ZOOM_UNAVAILABLE: &str = "Zoom nicht verfügbar";
 const ZOOM_ON_LEVEL: f32 = 2.0;
+
+fn zoom_step() -> assistant_zoom::ZoomStep {
+    ZOOM_STEP.get()
+}
 
 fn zoom_status(level: f32) -> String {
     format!("Zoom: {} %", (level * 100.0).round() as i32)
@@ -249,8 +254,8 @@ pub fn handle(cmd: Command, panel: &PanelWindow, config: &Config) {
         Command::ToggleFeature(f) => {
             panel.set_status_text(toggle_feature(f).into());
         }
-        Command::ZoomIn => panel.set_status_text(with_zoom(Zoom::zoom_in).into()),
-        Command::ZoomOut => panel.set_status_text(with_zoom(Zoom::zoom_out).into()),
+        Command::ZoomIn => panel.set_status_text(with_zoom(|z| z.zoom_in(zoom_step())).into()),
+        Command::ZoomOut => panel.set_status_text(with_zoom(|z| z.zoom_out(zoom_step())).into()),
         Command::ZoomReset => panel.set_status_text(with_zoom(Zoom::reset).into()),
         Command::Quit => {
             shutdown();
