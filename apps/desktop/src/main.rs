@@ -1,10 +1,12 @@
 mod app;
+mod hotkey;
 mod platform;
 mod single_instance;
 mod tray;
 
 use assistant_config::Config;
 use assistant_core::{Command, Feature};
+use global_hotkey::{GlobalHotKeyEvent, HotKeyState};
 use slint::ComponentHandle;
 use tray_icon::menu::MenuEvent;
 use tray_icon::{MouseButton, MouseButtonState, TrayIconEvent};
@@ -51,6 +53,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Tray nach Backend-Init (PanelWindow) erstellen und am Leben halten.
     let tray = tray::create()?;
 
+    // Manager must stay alive for the hotkey to remain registered.
+    let hotkey = hotkey::register(&config.hotkeys.toggle_panel);
+
     let weak = panel.as_weak();
     let timer = slint::Timer::default();
     timer.start(
@@ -72,6 +77,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     continue;
                 };
                 app::handle(cmd, &panel, &config);
+            }
+            while let Ok(ev) = GlobalHotKeyEvent::receiver().try_recv() {
+                if ev.state == HotKeyState::Pressed
+                    && hotkey.as_ref().is_some_and(|(_, id)| *id == ev.id)
+                {
+                    app::handle(Command::TogglePanel, &panel, &config);
+                }
             }
             while let Ok(ev) = TrayIconEvent::receiver().try_recv() {
                 if let TrayIconEvent::Click {

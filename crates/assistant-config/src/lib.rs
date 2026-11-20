@@ -129,9 +129,13 @@ mod tests {
     fn old_file_without_hotkeys_loads() {
         let d = tempfile::tempdir().unwrap();
         let p = d.path().join("c.toml");
-        std::fs::write(&p, "[panel]
+        std::fs::write(
+            &p,
+            "[panel]
 width = 420
-").unwrap();
+",
+        )
+        .unwrap();
         let c = Config::load_from(&p);
         assert_eq!(c.hotkeys.toggle_panel, "ctrl+alt+p");
         assert_eq!(c.panel.width, 420);
