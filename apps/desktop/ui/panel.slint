@@ -92,13 +92,14 @@ export component PanelWindow inherits Window {
     width: Dock.width;
     title: "PC Assistant";
     no-frame: true;
-    always-on-top: true;
+    always-on-top: root.keep-on-top;
     background: transparent;
     forward-focus: keys;
 
     callback close-requested();
     callback action-triggered(string);
     callback zoom-step-selected(int);
+    in property <bool> keep-on-top: true;
     in property <string> status-text;
     in property <int> zoom-percent: 100;
     in property <int> zoom-step: 100;
