@@ -35,6 +35,9 @@ pub fn handle(cmd: Command, panel: &PanelWindow, config: &Config) {
         Command::OpenSettings => {
             // TODO: Einstellungen-Fenster
         }
+        Command::ToggleFeature(_) => {
+            // Platzhalter, folgt im naechsten Commit.
+        }
         Command::Quit => {
             if let Err(e) = config.save() {
                 eprintln!("config save failed: {e}");
