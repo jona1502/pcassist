@@ -2,6 +2,15 @@
 // Die Werte werden von Rust gesetzt (`settings.rs`); "Speichern" liest sie zurueck.
 
 import { Button, CheckBox, ComboBox, LineEdit, Palette, ScrollView, Slider } from "std-widgets.slint";
+import { MarkShape } from "overlay.slint";
+
+// Farbvorschlag fuer den Mausmarker; `mark` ist die lesbare Haekchenfarbe darauf.
+export struct MouseSwatch {
+    name: string,
+    hex: string,
+    color: color,
+    mark: color,
+}
 
 global Ui {
     out property <color> ring: Palette.color-scheme == ColorScheme.dark ? #ffd23f : #0b57d0;
@@ -51,6 +60,7 @@ component NavItem inherits Rectangle {
     }
 
     fs := FocusScope {
+        focus-on-click: false;
         key-pressed(event) => {
             if (event.text == " " || event.text == Key.Return) {
                 root.activated();
@@ -107,12 +117,155 @@ component Segment inherits Rectangle {
     }
 
     fs := FocusScope {
+        focus-on-click: false;
         key-pressed(event) => {
             if (event.text == " " || event.text == Key.Return) {
                 root.activated();
                 return accept;
             }
             reject
+        }
+    }
+}
+
+// Farbfeld (>= 44 px) mit Auswahlhaken; Fokus = aeusserer Ring.
+component ColorSwatch inherits Rectangle {
+    in property <string> name;
+    in property <color> swatch;
+    in property <color> mark;
+    in property <bool> selected;
+    callback activated();
+
+    min-width: 44px;
+    preferred-width: 48px;
+    max-width: 48px;
+    min-height: 44px;
+    preferred-height: 48px;
+    max-height: 48px;
+    border-radius: 8px;
+    background: root.swatch;
+    border-width: root.selected ? 4px : 1px;
+    border-color: root.selected ? Palette.foreground : Palette.border;
+    accessible-role: radio-button;
+    accessible-label: root.name;
+    accessible-description: root.selected ? "Ausgewählt" : "";
+    accessible-checkable: true;
+    accessible-checked: root.selected;
+    accessible-action-default => {
+        root.activated();
+    }
+
+    if fs.has-focus: Rectangle {
+        x: -5px;
+        y: -5px;
+        width: parent.width + 10px;
+        height: parent.height + 10px;
+        border-radius: 12px;
+        border-width: 3px;
+        border-color: Ui.ring;
+    }
+
+    if root.selected: Text {
+        text: "✓";
+        color: root.mark;
+        font-size: 24px;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    touch := TouchArea {
+        clicked => {
+            fs.focus();
+            root.activated();
+        }
+    }
+
+    fs := FocusScope {
+        focus-on-click: false;
+        key-pressed(event) => {
+            if (event.text == " " || event.text == Key.Return) {
+                root.activated();
+                return accept;
+            }
+            reject
+        }
+    }
+}
+
+component SwatchRow inherits HorizontalLayout {
+    in property <[MouseSwatch]> swatches;
+    in property <string> selected-hex;
+    callback picked(string);
+
+    spacing: 8px;
+    alignment: start;
+    for sw in root.swatches: ColorSwatch {
+        name: sw.name;
+        swatch: sw.color;
+        mark: sw.mark;
+        selected: root.selected-hex.to-lowercase() == sw.hex.to-lowercase();
+        activated => { root.picked(sw.hex); }
+    }
+}
+
+// Vorschau: gleiche Zeichnung wie das Overlay (MarkShape), auf heller und
+// dunkler Haelfte, damit jede Farbe irgendwo sichtbar ist.
+component MousePreview inherits Rectangle {
+    in property <int> shape;
+    in property <color> mark-color;
+    in property <color> click-color;
+    in property <bool> click-on;
+    in property <length> diameter;
+    in property <length> thickness;
+    in property <string> description;
+    property <float> k: 0.6;
+
+    height: 120px;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: Palette.border;
+    clip: true;
+    accessible-role: image;
+    accessible-label: "Vorschau des Mausmarkers";
+    accessible-description: root.description;
+
+    HorizontalLayout {
+        Rectangle { background: #f2f2f2; }
+        Rectangle { background: #262626; }
+    }
+    MarkShape {
+        width: parent.width;
+        height: parent.height;
+        shape: root.shape;
+        mark-color: root.mark-color;
+        diameter: root.diameter * root.k;
+        thickness: max(1px, root.thickness * root.k);
+    }
+    if root.click-on: Rectangle {
+        x: parent.width - 76px;
+        y: parent.height - 36px;
+        width: 68px;
+        height: 28px;
+        border-radius: 14px;
+        background: #262626;
+        border-width: 1px;
+        border-color: #808080;
+        Rectangle {
+            x: 8px;
+            y: 6px;
+            width: 16px;
+            height: 16px;
+            border-radius: 8px;
+            background: root.click-color;
+        }
+        Text {
+            x: 28px;
+            width: parent.width - 32px;
+            text: "Klick";
+            color: #ffffff;
+            font-size: 13px;
+            vertical-alignment: center;
         }
     }
 }
@@ -181,9 +334,12 @@ export component SettingsWindow inherits Window {
     callback save();
     callback close-requested();
     callback test-speak();
+    // Ein Mausmarker-Wert wurde geaendert: Rust wendet ihn live an.
+    callback mouse-changed();
+    pure callback validate-hex(string) -> bool;
     pure callback validate-hotkey(string) -> bool;
 
-    // 0 Zoom, 1 Vorlesen, 2 Audio, 3 Tastenkuerzel, 4 Panel
+    // 0 Zoom, 1 Vorlesen, 2 Audio, 3 Tastenkuerzel, 4 Maus, 5 Panel
     in-out property <int> section: 0;
     in-out property <int> zoom-step: 100;
     in-out property <float> tts-rate: 0;
@@ -200,6 +356,22 @@ export component SettingsWindow inherits Window {
     in-out property <string> hk-stop;
     in-out property <string> hk-mouse;
     in-out property <bool> always-on-top-setting: true;
+    in property <[MouseSwatch]> mouse-presets;
+    in-out property <bool> mouse-enabled;
+    // 0 Ring, 1 gefuellt, 2 Fadenkreuz
+    in-out property <int> mouse-shape: 0;
+    // "#RRGGBB"; mouse-color-edit ist der Text im Eingabefeld (kann halb getippt sein).
+    in-out property <string> mouse-color: "#FFD23F";
+    in-out property <string> mouse-color-edit: "#FFD23F";
+    in-out property <float> mouse-size: 64;
+    in-out property <float> mouse-thickness: 4;
+    in-out property <float> mouse-opacity: 80;
+    in-out property <bool> mouse-click: true;
+    in-out property <string> mouse-click-color: "#FF4D4D";
+    // Von Rust berechnet: Farben fuer die Vorschau (inkl. Deckkraft).
+    in property <color> mouse-preview-color: #ffd23fcc;
+    in property <color> mouse-preview-click: #ff4d4d;
+    property <bool> mouse-hex-invalid: !root.validate-hex(root.mouse-color-edit);
     in property <string> output-note;
     in property <string> status-text;
 
@@ -207,7 +379,7 @@ export component SettingsWindow inherits Window {
         root.section = i;
     }
     function move(from: int, delta: int) {
-        let to = Math.max(0, Math.min(4, from + delta));
+        let to = Math.max(0, Math.min(5, from + delta));
         root.section = to;
         if (to == 0) {
             n0.focus-item();
@@ -217,8 +389,10 @@ export component SettingsWindow inherits Window {
             n2.focus-item();
         } else if (to == 3) {
             n3.focus-item();
-        } else {
+        } else if (to == 4) {
             n4.focus-item();
+        } else {
+            n5.focus-item();
         }
     }
     public function focus-window() {
@@ -271,15 +445,40 @@ export component SettingsWindow inherits Window {
                             move(d) => { root.move(3, d); }
                         }
                         n4 := NavItem {
-                            label: "Panel";
+                            label: "Maus";
                             selected: root.section == 4;
                             activated => { root.select(4); }
                             move(d) => { root.move(4, d); }
                         }
+                        n5 := NavItem {
+                            label: "Panel";
+                            selected: root.section == 5;
+                            activated => { root.select(5); }
+                            move(d) => { root.move(5, d); }
+                        }
                     }
                 }
 
-                ScrollView {
+                VerticalLayout {
+                    // Maus: Titel und Vorschau bleiben stehen, nur die Regler scrollen.
+                    if root.section == 4: VerticalLayout {
+                        vertical-stretch: 0;
+                        padding: 24px;
+                        padding-bottom: 0px;
+                        spacing: 12px;
+                        SectionTitle { text: "Maus"; }
+                        MousePreview {
+                            shape: root.mouse-shape;
+                            mark-color: root.mouse-preview-color;
+                            click-color: root.mouse-preview-click;
+                            click-on: root.mouse-click;
+                            diameter: root.mouse-size * 1px;
+                            thickness: root.mouse-thickness * 1px;
+                            description: (root.mouse-shape == 0 ? "Ring" : (root.mouse-shape == 1 ? "Gefüllt" : "Fadenkreuz")) + ", " + Math.round(root.mouse-size) + " Pixel, Vorschau verkleinert";
+                        }
+                    }
+                    ScrollView {
+                    vertical-stretch: 1;
                     VerticalLayout {
                         padding: 24px;
                         spacing: 16px;
@@ -381,6 +580,129 @@ export component SettingsWindow inherits Window {
                         }
 
                         if root.section == 4: VerticalLayout {
+                            spacing: 14px;
+                            CheckBox {
+                                text: "Mausmarker an";
+                                checked <=> root.mouse-enabled;
+                                min-height: Ui.target;
+                                accessible-description: "Zeichnet einen Marker um den Mauszeiger";
+                                toggled => { root.mouse-changed(); }
+                            }
+                            Label { text: "Form"; }
+                            HorizontalLayout {
+                                spacing: 8px;
+                                alignment: start;
+                                Segment {
+                                    label: "Ring";
+                                    a11y-label: "Form Ring";
+                                    selected: root.mouse-shape == 0;
+                                    activated => { root.mouse-shape = 0; root.mouse-changed(); }
+                                }
+                                Segment {
+                                    label: "Gefüllt";
+                                    a11y-label: "Form Gefüllt";
+                                    selected: root.mouse-shape == 1;
+                                    activated => { root.mouse-shape = 1; root.mouse-changed(); }
+                                }
+                                Segment {
+                                    label: "Fadenkreuz";
+                                    a11y-label: "Form Fadenkreuz";
+                                    selected: root.mouse-shape == 2;
+                                    activated => { root.mouse-shape = 2; root.mouse-changed(); }
+                                }
+                            }
+                            Label { text: "Farbe"; }
+                            SwatchRow {
+                                swatches: root.mouse-presets;
+                                selected-hex: root.mouse-color;
+                                picked(hex) => {
+                                    root.mouse-color = hex;
+                                    root.mouse-color-edit = hex;
+                                    root.mouse-changed();
+                                }
+                            }
+                            HorizontalLayout {
+                                spacing: 12px;
+                                Label {
+                                    text: "Eigene Farbe";
+                                    width: 110px;
+                                    vertical-alignment: center;
+                                }
+                                LineEdit {
+                                    text <=> root.mouse-color-edit;
+                                    placeholder-text: "#RRGGBB";
+                                    min-height: Ui.target;
+                                    accessible-label: "Eigene Farbe als Hexwert";
+                                    accessible-description: root.mouse-hex-invalid ? "Ungültig" : "Format #RRGGBB, zum Beispiel #FFD23F";
+                                    edited(t) => {
+                                        if (root.validate-hex(t)) {
+                                            root.mouse-color = t;
+                                            root.mouse-changed();
+                                        }
+                                    }
+                                }
+                                Text {
+                                    text: root.mouse-hex-invalid ? "Ungültig" : "";
+                                    width: 70px;
+                                    color: Ui.error;
+                                    font-size: 14px;
+                                    font-weight: 700;
+                                    vertical-alignment: center;
+                                    accessible-role: text;
+                                }
+                            }
+                            Label { text: "Größe: " + Math.round(root.mouse-size) + " px"; }
+                            Slider {
+                                minimum: 40;
+                                maximum: 200;
+                                step: 1;
+                                value <=> root.mouse-size;
+                                min-height: Ui.target;
+                                accessible-label: "Größe";
+                                accessible-description: "40 bis 200 Pixel";
+                                changed(v) => { root.mouse-changed(); }
+                            }
+                            Label { text: "Dicke: " + Math.round(root.mouse-thickness) + " px"; }
+                            Slider {
+                                minimum: 2;
+                                maximum: 12;
+                                step: 1;
+                                value <=> root.mouse-thickness;
+                                min-height: Ui.target;
+                                accessible-label: "Dicke";
+                                accessible-description: "2 bis 12 Pixel, gilt für Ring und Fadenkreuz";
+                                changed(v) => { root.mouse-changed(); }
+                            }
+                            Label { text: "Deckkraft: " + Math.round(root.mouse-opacity) + " %"; }
+                            Slider {
+                                minimum: 20;
+                                maximum: 100;
+                                step: 1;
+                                value <=> root.mouse-opacity;
+                                min-height: Ui.target;
+                                accessible-label: "Deckkraft";
+                                accessible-description: "20 bis 100 Prozent";
+                                changed(v) => { root.mouse-changed(); }
+                            }
+                            CheckBox {
+                                text: "Klick-Effekt";
+                                checked <=> root.mouse-click;
+                                min-height: Ui.target;
+                                accessible-description: "Kurzer Impuls beim Drücken einer Maustaste";
+                                toggled => { root.mouse-changed(); }
+                            }
+                            Label { text: "Klickfarbe"; }
+                            SwatchRow {
+                                swatches: root.mouse-presets;
+                                selected-hex: root.mouse-click-color;
+                                picked(hex) => {
+                                    root.mouse-click-color = hex;
+                                    root.mouse-changed();
+                                }
+                            }
+                        }
+
+                        if root.section == 5: VerticalLayout {
                             spacing: 16px;
                             SectionTitle { text: "Panel"; }
                             CheckBox {
@@ -390,6 +712,7 @@ export component SettingsWindow inherits Window {
                                 accessible-description: "Die Dock-Leiste bleibt über anderen Fenstern";
                             }
                         }
+                    }
                     }
                 }
             }

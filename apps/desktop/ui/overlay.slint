@@ -3,22 +3,14 @@
 // Win32-Erweiterungsstile (siehe mouse_overlay.rs); hier steht nur das Aussehen.
 // Alle Werte kommen aus der Config (MouseConfig).
 
-export component MouseOverlay inherits Window {
-    title: "Mausmarker";
-    no-frame: true;
-    always-on-top: true;
-    background: transparent;
-    accessible-role: none;
-
+// Die Markierung selbst (Ring, Scheibe, Fadenkreuz), mittig in der eigenen Flaeche.
+// Wird vom Overlay-Fenster und von der Vorschau in den Einstellungen genutzt.
+export component MarkShape inherits Rectangle {
     // 0 = Ring, 1 = gefuellt, 2 = Fadenkreuz
     in property <int> shape: 0;
-    // Farbe inklusive Deckkraft (Alpha).
     in property <color> mark-color: #ffd23fcc;
     in property <length> diameter: 64px;
     in property <length> thickness: 4px;
-    in property <color> click-color: #ff4d4d;
-    // Fortschritt des Klick-Impulses 0..1; >= 1 heisst: kein Impuls.
-    in property <float> pulse: 1.0;
 
     property <length> cx: root.width / 2;
     property <length> cy: root.height / 2;
@@ -76,6 +68,35 @@ export component MouseOverlay inherits Window {
             height: root.half - root.gap;
             background: root.mark-color;
         }
+    }
+}
+
+export component MouseOverlay inherits Window {
+    title: "Mausmarker";
+    no-frame: true;
+    always-on-top: true;
+    background: transparent;
+    accessible-role: none;
+
+    in property <int> shape: 0;
+    // Farbe inklusive Deckkraft (Alpha).
+    in property <color> mark-color: #ffd23fcc;
+    in property <length> diameter: 64px;
+    in property <length> thickness: 4px;
+    in property <color> click-color: #ff4d4d;
+    // Fortschritt des Klick-Impulses 0..1; >= 1 heisst: kein Impuls.
+    in property <float> pulse: 1.0;
+
+    property <length> cx: root.width / 2;
+    property <length> cy: root.height / 2;
+
+    MarkShape {
+        width: root.width;
+        height: root.height;
+        shape: root.shape;
+        mark-color: root.mark-color;
+        diameter: root.diameter;
+        thickness: root.thickness;
     }
 
     // Klick-Impuls: gefuellte Scheibe, schrumpft auf 45 % und blendet aus.

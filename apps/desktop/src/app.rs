@@ -68,14 +68,15 @@ pub fn init_runtime(config: &Config) {
     TTS_OUTPUT.with_borrow_mut(|o| o.clone_from(&config.audio.output_device));
 }
 
-/// Applies a saved config to the running app: zoom step, speech rate and the
-/// dock's always-on-top flag.
+/// Applies a saved config to the running app: zoom step, speech rate, the
+/// dock's always-on-top flag and the mouse highlight.
 pub fn apply_config(config: &Config, panel: &PanelWindow) {
     init_runtime(config);
     sync_zoom(panel);
     panel.set_keep_on_top(config.panel.always_on_top);
     set_tts_rate(config.tts.rate);
     set_tts_output(config.audio.output_device.as_deref());
+    crate::mouse_overlay::apply_config(&config.mouse);
 }
 
 /// Sets the speech rate, also on a running `Tts`.
@@ -141,7 +142,9 @@ pub fn select_zoom_step(percent: i32, panel: &PanelWindow) {
 fn persist_current() {
     let mut c = crate::settings::current();
     c.zoom.step = zoom_step().percent();
-    c.mouse = crate::mouse_overlay::current_config();
+    // Only the on/off state follows the live overlay: other mouse values may be an
+    // unsaved preview from the settings window and are saved by "Speichern" only.
+    c.mouse.enabled = crate::mouse_overlay::current_config().enabled;
     crate::settings::set_current(c.clone());
     if let Err(e) = c.save() {
         eprintln!("config save failed: {e}");
@@ -351,6 +354,7 @@ pub fn handle(cmd: Command, panel: &PanelWindow) {
         Command::ToggleFeature(Feature::MouseHighlight) => {
             let on = crate::mouse_overlay::toggle();
             persist_current();
+            crate::settings::sync_mouse_enabled();
             let msg = if on {
                 "Mausmarker an"
             } else {
