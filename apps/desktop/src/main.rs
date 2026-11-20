@@ -1,5 +1,6 @@
 mod app;
 mod hotkey;
+mod mouse_overlay;
 mod platform;
 mod selection;
 mod single_instance;
@@ -65,6 +66,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
     app::sync_zoom(&panel);
+    mouse_overlay::apply_config(&config.mouse);
 
     // Tray nach Backend-Init (PanelWindow) erstellen und am Leben halten.
     let tray = tray::create()?;

@@ -234,6 +234,7 @@ pub fn tick(panel: &PanelWindow, config: &Config) {
 /// Resets the screen to 100 % (drops `Zoom`). Call before exit.
 pub fn shutdown() {
     ZOOM.with_borrow_mut(|slot| *slot = None);
+    crate::mouse_overlay::shutdown();
     // Drop stops speech and joins the worker thread.
     TTS.with_borrow_mut(|slot| *slot = None);
 }
