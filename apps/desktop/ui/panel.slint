@@ -26,7 +26,7 @@ component Tile inherits Rectangle {
     in property <string> a11y-label;
     callback clicked();
 
-    width: root.tile-width;
+    min-width: root.tile-width;
     height: root.tile-height;
     border-radius: 12px;
     background: touch.pressed ? Dock.pressed : (touch.has-hover ? Dock.hover : transparent);
