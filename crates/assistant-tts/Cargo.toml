@@ -1,0 +1,7 @@
+[package]
+name = "assistant-tts"
+version = "0.1.0"
+edition = "2021"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", features = ["Win32_Media_Speech", "Win32_System_Com"] }

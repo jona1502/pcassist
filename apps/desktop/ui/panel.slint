@@ -1,14 +1,135 @@
-import { Button } from "std-widgets.slint";
+// Dock-Panel: schmale, abgerundete Leiste am rechten Bildschirmrand, nur Icons.
+// Hinweis Transparenz: Fenster ist `background: transparent`; die sichtbare
+// Leiste ist das abgerundete Rectangle. Auf Windows (winit + femtovg) wird das
+// Fenster dann mit Alpha-Kanal erzeugt.
+
+export { MouseOverlay } from "overlay.slint";
+
+global Dock {
+    out property <length> width: 196px;
+    out property <length> bar-padding: 6px;
+    out property <length> tile: 52px;
+    out property <color> bar: #14171de0;
+    out property <color> hover: #ffffff2e;
+    out property <color> pressed: #ffffff55;
+    out property <color> ring: #ffd23f;
+    out property <color> fg: #ffffff;
+}
+
+// Trennlinie mit Gruppenueberschrift: zeigt, was zusammengehoert.
+component GroupHeader inherits Rectangle {
+    in property <string> title;
+    height: 30px;
+    accessible-role: none;
+    Rectangle {
+        y: 0px;
+        height: 1px;
+        background: #ffffff40;
+    }
+    Text {
+        x: 12px;
+        y: 8px;
+        text: root.title;
+        color: #ffd23f;
+        font-size: 11px;
+        font-weight: 700;
+        accessible-role: text;
+        accessible-label: "Gruppe " + root.title;
+    }
+}
+
+// Ein Icon- oder Text-Kachel-Button mit Hover/Pressed/Fokus-Zustand.
+component Tile inherits Rectangle {
+    in property <image> icon;
+    in property <string> label-text;
+    // Name rechts neben dem Icon (linksbuendig).
+    in property <string> side-label;
+    in property <string> description;
+    in property <length> tile-width: Dock.tile;
+    in property <length> tile-height: Dock.tile;
+    in property <length> text-size: 14px;
+    in property <length> icon-size: 28px;
+    in property <string> a11y-label;
+    callback clicked();
+
+    min-width: root.tile-width;
+    height: root.tile-height;
+    border-radius: 12px;
+    background: touch.pressed ? Dock.pressed : (touch.has-hover ? Dock.hover : transparent);
+    border-width: focus.has-focus ? 3px : 0px;
+    border-color: Dock.ring;
+    accessible-role: button;
+    accessible-label: root.a11y-label;
+    accessible-description: root.description;
+    accessible-action-default => { root.clicked(); }
+
+    if root.icon.width > 0 && root.side-label == "": Image {
+        source: root.icon;
+        width: root.icon-size;
+        height: root.icon-size;
+        colorize: Dock.fg;
+    }
+    if root.label-text != "": Text {
+        text: root.label-text;
+        color: Dock.fg;
+        font-size: root.text-size;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    if root.side-label != "": HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 8px;
+        spacing: 12px;
+        alignment: start;
+        if root.icon.width > 0: Image {
+            source: root.icon;
+            width: root.icon-size;
+            image-fit: contain;
+            colorize: Dock.fg;
+        }
+        Text {
+            text: root.side-label;
+            color: Dock.fg;
+            font-size: root.text-size;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+    focus := FocusScope {
+        key-pressed(event) => {
+            if (event.text == " " || event.text == Key.Return) {
+                root.clicked();
+                return accept;
+            }
+            reject
+        }
+    }
+}
 
 export component PanelWindow inherits Window {
-    width: 360px;
-    height: 600px;
+    width: Dock.width;
     title: "PC Assistant";
     no-frame: true;
-    always-on-top: true;
+    always-on-top: root.keep-on-top;
+    background: transparent;
     forward-focus: keys;
 
     callback close-requested();
+    callback action-triggered(string);
+    callback zoom-step-selected(int);
+    in property <bool> keep-on-top: true;
+    in property <string> status-text;
+    in property <int> zoom-percent: 100;
+    in property <int> zoom-step: 100;
+    // Layout-Hoehe/Breite (logisch) fuer die Platzierung durch Rust.
+    out property <length> content-height: bar.preferred-height;
+    out property <length> content-width: Dock.width;
 
     keys := FocusScope {
         key-pressed(event) => {
@@ -19,28 +140,161 @@ export component PanelWindow inherits Window {
             reject
         }
 
-        VerticalLayout {
-            padding: 16px;
-            spacing: 12px;
+        bar := Rectangle {
+            background: Dock.bar;
+            border-radius: 18px;
+            border-width: 1px;
+            border-color: #ffffff30;
             accessible-role: none;
 
-            HorizontalLayout {
-                Text {
-                    text: "PC Assistant";
-                    font-size: 24px;
-                    vertical-alignment: center;
-                    accessible-role: text;
-                    accessible-label: "PC Assistant";
+            VerticalLayout {
+                padding: Dock.bar-padding;
+                spacing: 6px;
+                alignment: start;
+
+                GroupHeader { title: "Zoom"; }
+                Tile {
+                    icon: @image-url("icons/zoom.svg");
+                    side-label: "Zoom";
+                    a11y-label: "Zoom";
+                    description: "Bildschirmzoom umschalten";
+                    clicked => { root.action-triggered("zoom"); }
                 }
-                Rectangle { }
-                Button {
-                    text: "Schließen";
-                    accessible-label: "Schließen";
+                // Kompakter Stepper: [-] [pct] [+]
+                HorizontalLayout {
+                    spacing: 0px;
+                    alignment: center;
+                    Tile {
+                        icon: @image-url("icons/minus.svg");
+                        icon-size: 16px;
+                        tile-width: 40px;
+                        tile-height: 44px;
+                        a11y-label: "Verkleinern";
+                        description: "Bildschirmzoom um eine Stufe verkleinern";
+                        clicked => { root.action-triggered("zoom-out"); }
+                    }
+                    Text {
+                        text: root.zoom-percent + "%";
+                        color: Dock.fg;
+                        font-size: 14px;
+                        font-weight: 700;
+                        width: 40px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        accessible-role: text;
+                        accessible-label: "Zoom " + root.zoom-percent + " Prozent";
+                    }
+                    Tile {
+                        icon: @image-url("icons/plus.svg");
+                        icon-size: 16px;
+                        tile-width: 40px;
+                        tile-height: 44px;
+                        a11y-label: "Vergrößern";
+                        description: "Bildschirmzoom um eine Stufe vergrößern";
+                        clicked => { root.action-triggered("zoom-in"); }
+                    }
+                }
+                // Schrittweite: zyklisch 100 -> 50 -> 10 -> 100
+                Tile {
+                    side-label: "Schritt ±" + root.zoom-step;
+                    a11y-label: "Schrittweite " + root.zoom-step + " Prozent, ändern";
+                    description: "Schrittweite des Zooms umschalten";
+                    clicked => {
+                        if (root.zoom-step == 100) {
+                            root.zoom-step-selected(50);
+                        } else if (root.zoom-step == 50) {
+                            root.zoom-step-selected(10);
+                        } else {
+                            root.zoom-step-selected(100);
+                        }
+                    }
+                }
+                Tile {
+                    icon: @image-url("icons/reset.svg");
+                    side-label: "Zurücksetzen";
+                    a11y-label: "Zoom zurücksetzen";
+                    description: "Bildschirmzoom auf 100 Prozent zurücksetzen";
+                    clicked => { root.action-triggered("zoom-reset"); }
+                }
+                GroupHeader { title: "Vorlesen"; }
+                Tile {
+                    icon: @image-url("icons/speaker.svg");
+                    side-label: "Vorlesen";
+                    a11y-label: "Vorlesen";
+                    description: "Vorlesen umschalten";
+                    clicked => { root.action-triggered("tts"); }
+                }
+                Tile {
+                    icon: @image-url("icons/pause.svg");
+                    side-label: "Pause / Weiter";
+                    a11y-label: "Vorlesen pausieren oder fortsetzen";
+                    description: "Vorlesen pausieren oder fortsetzen";
+                    clicked => { root.action-triggered("speak-pause"); }
+                }
+                Tile {
+                    icon: @image-url("icons/stop.svg");
+                    side-label: "Stopp";
+                    a11y-label: "Vorlesen stoppen";
+                    description: "Vorlesen beenden";
+                    clicked => { root.action-triggered("speak-stop"); }
+                }
+                GroupHeader { title: "Eingabe"; }
+                Tile {
+                    icon: @image-url("icons/mic.svg");
+                    side-label: "Mikrofon";
+                    a11y-label: "Mikrofon";
+                    description: "Mikrofon umschalten";
+                    clicked => { root.action-triggered("mic"); }
+                }
+                GroupHeader { title: "Anzeige"; }
+                Tile {
+                    icon: @image-url("icons/contrast.svg");
+                    side-label: "Kontrast";
+                    a11y-label: "Kontrast";
+                    description: "Hohen Kontrast umschalten";
+                    clicked => { root.action-triggered("contrast"); }
+                }
+                Tile {
+                    icon: @image-url("icons/mouse.svg");
+                    side-label: "Mausmarker";
+                    a11y-label: "Mausmarker";
+                    description: "Markierung um den Mauszeiger umschalten";
+                    clicked => { root.action-triggered("mouse"); }
+                }
+                GroupHeader { title: "Programm"; }
+                Tile {
+                    icon: @image-url("icons/gear.svg");
+                    side-label: "Einstellungen";
+                    a11y-label: "Einstellungen";
+                    description: "Einstellungen öffnen";
+                    clicked => { root.action-triggered("settings"); }
+                }
+                Tile {
+                    icon: @image-url("icons/close.svg");
+                    side-label: "Schließen";
+                    a11y-label: "Schließen";
+                    description: "Panel schließen";
                     clicked => { root.close-requested(); }
                 }
+                // Slint hat keine Live-Region; kleiner Text, Label traegt die volle Meldung.
+                // Feste Hoehe: Dock-Hoehe aendert sich nicht, wenn Status erscheint.
+                Text {
+                    text: root.status-text;
+                    color: Dock.fg;
+                    font-size: 9px;
+                    wrap: word-wrap;
+                    overflow: elide;
+                    horizontal-alignment: center;
+                    height: 26px;
+                    accessible-role: text;
+                    accessible-label: root.status-text;
+                }
             }
-            Rectangle { }
         }
+    }
+
+    public function focus-panel() {
+        keys.focus();
     }
 
     init => { keys.focus(); }
