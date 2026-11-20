@@ -209,14 +209,15 @@ export component PanelWindow inherits Window {
                     clicked => { root.close-requested(); }
                 }
                 // Slint hat keine Live-Region; kleiner Text, Label traegt die volle Meldung.
-                if root.status-text != "": Text {
+                // Feste Hoehe: Dock-Hoehe aendert sich nicht, wenn Status erscheint.
+                Text {
                     text: root.status-text;
                     color: Dock.fg;
                     font-size: 9px;
                     wrap: word-wrap;
                     overflow: elide;
                     horizontal-alignment: center;
-                    max-height: 26px;
+                    height: 26px;
                     accessible-role: text;
                     accessible-label: root.status-text;
                 }
