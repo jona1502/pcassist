@@ -2,7 +2,7 @@
 //! Privacy: clipboard contents are never logged. Blocking; call off the UI thread.
 
 use std::time::{Duration, Instant};
-use windows_sys::Win32::Foundation::{GlobalFree, HANDLE};
+use windows_sys::Win32::Foundation::{GlobalFree, HANDLE, HWND};
 use windows_sys::Win32::System::DataExchange::{
     CloseClipboard, EmptyClipboard, GetClipboardData, GetClipboardSequenceNumber, OpenClipboard,
     SetClipboardData,
@@ -10,9 +10,13 @@ use windows_sys::Win32::System::DataExchange::{
 use windows_sys::Win32::System::Memory::{
     GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock, GMEM_MOVEABLE,
 };
+use windows_sys::Win32::System::Threading::GetCurrentProcessId;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP,
     VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
+};
+use windows_sys::Win32::UI::WindowsAndMessaging::{
+    GetForegroundWindow, GetWindowThreadProcessId, IsWindow, SetForegroundWindow,
 };
 
 /// Clipboard format CF_UNICODETEXT.
@@ -157,12 +161,70 @@ pub fn capture_selection() -> Option<String> {
     copied.filter(|t| !t.trim().is_empty())
 }
 
+/// Foreground window and the pid that owns it (`None` if there is none).
+fn foreground() -> Option<(isize, u32)> {
+    // SAFETY: plain query calls; `pid` is a valid out pointer.
+    unsafe {
+        let hwnd = GetForegroundWindow();
+        if hwnd.is_null() {
+            return None;
+        }
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(hwnd, &mut pid);
+        Some((hwnd as isize, pid))
+    }
+}
+
+/// Pure decision: a foreground window is "external" if it belongs to another process.
+fn external_hwnd(fg: Option<(isize, u32)>, own_pid: u32) -> Option<isize> {
+    fg.filter(|&(h, pid)| h != 0 && pid != own_pid)
+        .map(|(h, _)| h)
+}
+
+/// Foreground window if it belongs to another process (call before showing the panel).
+pub fn foreground_external() -> Option<isize> {
+    // SAFETY: plain query call.
+    external_hwnd(foreground(), unsafe { GetCurrentProcessId() })
+}
+
+/// True if our own process currently owns the foreground window.
+pub fn own_window_is_foreground() -> bool {
+    // SAFETY: plain query call.
+    let own = unsafe { GetCurrentProcessId() };
+    foreground().is_some_and(|(_, pid)| pid == own)
+}
+
+/// Gives focus back to `hwnd`; false if the window is gone or refuses.
+fn restore_focus(hwnd: isize) -> bool {
+    let h = hwnd as HWND;
+    // SAFETY: IsWindow validates the handle; SetForegroundWindow is allowed
+    // because our process is foreground at click time.
+    unsafe { IsWindow(h) != 0 && SetForegroundWindow(h) != 0 }
+}
+
 /// Runs `capture_selection` on a worker thread; the result arrives on the
-/// returned channel (drained by the UI timer).
-pub fn capture_async() -> std::sync::mpsc::Receiver<Option<String>> {
+/// returned channel (drained by the UI timer). With `restore`, that window
+/// gets focus back first (panel-button path: the panel is foreground).
+pub fn capture_async(restore: Option<isize>) -> std::sync::mpsc::Receiver<Option<String>> {
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
+        if restore.is_some_and(restore_focus) {
+            std::thread::sleep(Duration::from_millis(80));
+        }
         let _ = tx.send(capture_selection());
     });
     rx
+}
+
+#[cfg(test)]
+mod tests {
+    use super::external_hwnd;
+
+    #[test]
+    fn external_window_decision() {
+        assert_eq!(external_hwnd(None, 1), None);
+        assert_eq!(external_hwnd(Some((0, 2)), 1), None);
+        assert_eq!(external_hwnd(Some((5, 1)), 1), None);
+        assert_eq!(external_hwnd(Some((5, 2)), 1), Some(5));
+    }
 }
