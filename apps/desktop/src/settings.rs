@@ -17,7 +17,8 @@ pub const DEFAULT_DEVICE: &str = "Standardgerät";
 const WIDTH: f32 = 720.0;
 const HEIGHT: f32 = 560.0;
 
-const OUTPUT_NOTE: &str = "Wird beim Vorlesen verwendet, sobald verfügbar.";
+const OUTPUT_NOTE: &str =
+    "Gilt für das Vorlesen. Wird das Gerät nicht gefunden, nutzt Windows das Standardgerät.";
 
 thread_local! {
     /// Last saved (or loaded) config; source of truth for the whole app.
@@ -206,14 +207,14 @@ fn populate(win: &SettingsWindow, cfg: &Config) {
 fn build(panel: &PanelWindow) -> Result<SettingsWindow, slint::PlatformError> {
     let win = SettingsWindow::new()?;
     win.window().on_close_requested(|| {
-        restore_rate();
+        restore_tts();
         CloseRequestResponse::HideWindow
     });
     win.on_validate_hotkey(|s| crate::hotkey::is_valid(s.trim()));
 
     let weak = win.as_weak();
     win.on_close_requested(move || {
-        restore_rate();
+        restore_tts();
         if let Some(w) = weak.upgrade() {
             let _ = w.hide();
         }
@@ -222,7 +223,10 @@ fn build(panel: &PanelWindow) -> Result<SettingsWindow, slint::PlatformError> {
     let weak = win.as_weak();
     win.on_test_speak(move || {
         let Some(w) = weak.upgrade() else { return };
-        let ok = crate::app::speak_test(w.get_tts_rate().round() as i32);
+        let ok = crate::app::speak_test(
+            w.get_tts_rate().round() as i32,
+            choice_to_option(w.get_output_device().as_str()).as_deref(),
+        );
         w.set_status_text(if ok { "" } else { "Vorlesen nicht verfügbar" }.into());
     });
 
@@ -236,9 +240,11 @@ fn build(panel: &PanelWindow) -> Result<SettingsWindow, slint::PlatformError> {
     Ok(win)
 }
 
-/// Unsaved test rate must not outlive the window.
-fn restore_rate() {
-    crate::app::set_tts_rate(current().tts.rate);
+/// Unsaved test rate and device must not outlive the window.
+fn restore_tts() {
+    let cfg = current();
+    crate::app::set_tts_rate(cfg.tts.rate);
+    crate::app::set_tts_output(cfg.audio.output_device.as_deref());
 }
 
 fn save(win: &SettingsWindow, panel: &PanelWindow) {

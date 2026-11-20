@@ -19,6 +19,20 @@ pub fn clamp_rate(rate: i32) -> i32 {
     rate.clamp(MIN_RATE, MAX_RATE)
 }
 
+/// True if a SAPI output description and a device name denote the same device.
+/// Case-insensitive; legacy MME names are cut to 31 characters, so a prefix
+/// of at least 8 characters on either side counts too.
+pub fn device_matches(description: &str, wanted: &str) -> bool {
+    let (d, w) = (
+        description.trim().to_lowercase(),
+        wanted.trim().to_lowercase(),
+    );
+    if d.is_empty() || w.is_empty() {
+        return false;
+    }
+    d == w || (d.len().min(w.len()) >= 8 && (d.starts_with(&w) || w.starts_with(&d)))
+}
+
 /// Trims, collapses all whitespace runs to one space, caps at `MAX_TEXT_CHARS`.
 pub fn clean_text(s: &str) -> String {
     let mut out = String::new();
@@ -43,6 +57,8 @@ enum Msg {
     Resume,
     Stop,
     Rate(i32),
+    /// Output device name; `None` = system default.
+    Output(Option<String>),
     Quit,
 }
 
@@ -108,6 +124,13 @@ impl Tts {
         let _ = self.tx.send(Msg::Rate(clamp_rate(rate)));
     }
 
+    /// Routes speech to the output device with this name (as listed by
+    /// `assistant-audio`); `None` = system default. Best effort: an unknown
+    /// device or a SAPI error silently keeps the current output.
+    pub fn set_output_device(&self, name: Option<&str>) {
+        let _ = self.tx.send(Msg::Output(name.map(str::to_owned)));
+    }
+
     /// True while speech is running or paused.
     pub fn is_speaking(&self) -> bool {
         self.speaking.load(Ordering::SeqCst)
@@ -124,13 +147,16 @@ impl Drop for Tts {
 }
 
 #[cfg(windows)]
+mod output;
+
+#[cfg(windows)]
 mod backend {
     use super::Msg;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
     use std::sync::Arc;
     use std::time::Duration;
-    use windows::core::PCWSTR;
+    use windows::core::{IUnknown, Interface, PCWSTR};
     use windows::Win32::Media::Speech::{ISpVoice, SpVoice, SPVOICESTATUS};
     use windows::Win32::System::Com::{
         CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_ALL, COINIT_MULTITHREADED,
@@ -141,6 +167,20 @@ mod backend {
     const SPF_IS_NOT_XML: u32 = 16;
     /// SPRS_DONE = 1: speech finished.
     const SPRS_DONE: u32 = 1;
+
+    /// Best effort: on any failure the voice keeps its current output.
+    unsafe fn set_output(voice: &ISpVoice, name: Option<&str>) {
+        let token = match name {
+            None => None,
+            Some(n) => match crate::output::find_token(n) {
+                Some(t) => Some(t),
+                None => return,
+            },
+        };
+        let unk = token.and_then(|t| t.cast::<IUnknown>().ok());
+        // None resets to the default output.
+        let _ = voice.SetOutput(unk.as_ref(), true);
+    }
 
     pub fn run(rx: Receiver<Msg>, ready: Sender<Result<(), String>>, speaking: Arc<AtomicBool>) {
         // SAFETY: COM is initialised and uninitialised on this thread only; the
@@ -195,6 +235,11 @@ mod backend {
                     Ok(Msg::Rate(r)) => {
                         let _ = voice.SetRate(r);
                     }
+                    Ok(Msg::Output(name)) => {
+                        let _ = voice.Resume();
+                        paused = false;
+                        set_output(&voice, name.as_deref());
+                    }
                     Ok(Msg::Quit) | Err(RecvTimeoutError::Disconnected) => {
                         let _ = voice.Resume();
                         let _ = voice.Speak(PCWSTR::null(), SPF_PURGEBEFORESPEAK, None);
@@ -236,6 +281,36 @@ mod backend {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn device_name_matching() {
+        assert!(device_matches(
+            "Lautsprecher (Realtek)",
+            "lautsprecher (realtek)"
+        ));
+        assert!(device_matches(
+            "MONITOR L/R (Volt 1",
+            "MONITOR L/R (Volt 1)"
+        ));
+        assert!(!device_matches("Lautsprecher (Realtek)", "Kopfhörer (USB)"));
+        assert!(!device_matches("", ""));
+        assert!(!device_matches("abc", "abcdef"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn lists_sapi_outputs_without_panic() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            unsafe {
+                use windows::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
+                let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+            }
+            tx.send(output::descriptions()).unwrap();
+        });
+        let n = rx.recv().unwrap();
+        eprintln!("sapi output tokens: {n:?}");
+    }
 
     #[test]
     fn rate_clamps() {

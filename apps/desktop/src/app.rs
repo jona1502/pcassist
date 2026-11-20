@@ -43,6 +43,8 @@ thread_local! {
     static TTS: RefCell<Option<Tts>> = const { RefCell::new(None) };
     /// Current speech rate (-10..=10); applied to a lazily created `Tts` and live.
     static TTS_RATE: Cell<i32> = const { Cell::new(0) };
+    /// Wanted speech output device (`None` = system default).
+    static TTS_OUTPUT: RefCell<Option<String>> = const { RefCell::new(None) };
     /// Running selection capture (worker thread result).
     static CAPTURE: RefCell<Option<Receiver<Option<String>>>> = const { RefCell::new(None) };
     static PAUSED: Cell<bool> = const { Cell::new(false) };
@@ -63,6 +65,7 @@ pub fn init_runtime(config: &Config) {
     let step = assistant_zoom::ZoomStep::from_percent(config.zoom.step).unwrap_or_default();
     ZOOM_STEP.set(step);
     TTS_RATE.set(assistant_tts::clamp_rate(config.tts.rate));
+    TTS_OUTPUT.with_borrow_mut(|o| o.clone_from(&config.audio.output_device));
 }
 
 /// Applies a saved config to the running app: zoom step, speech rate and the
@@ -72,6 +75,7 @@ pub fn apply_config(config: &Config, panel: &PanelWindow) {
     sync_zoom(panel);
     panel.set_keep_on_top(config.panel.always_on_top);
     set_tts_rate(config.tts.rate);
+    set_tts_output(config.audio.output_device.as_deref());
 }
 
 /// Sets the speech rate, also on a running `Tts`.
@@ -85,9 +89,27 @@ pub fn set_tts_rate(rate: i32) {
     });
 }
 
-/// Speaks a short test sentence with `rate` (not persisted).
-pub fn speak_test(rate: i32) -> bool {
+/// Routes speech to the named output device (`None` = default), also on a
+/// running `Tts`. Unknown devices silently fall back inside the TTS worker.
+pub fn set_tts_output(name: Option<&str>) {
+    let changed = TTS_OUTPUT.with_borrow_mut(|o| {
+        let changed = o.as_deref() != name;
+        *o = name.map(str::to_owned);
+        changed
+    });
+    if changed {
+        TTS.with_borrow(|t| {
+            if let Some(t) = t {
+                t.set_output_device(name);
+            }
+        });
+    }
+}
+
+/// Speaks a short test sentence with `rate` on `output` (not persisted).
+pub fn speak_test(rate: i32, output: Option<&str>) -> bool {
     let rate = assistant_tts::clamp_rate(rate);
+    set_tts_output(output);
     with_tts(|t| {
         t.set_rate(rate);
         t.speak("Dies ist ein Test");
@@ -173,6 +195,11 @@ fn with_tts<R>(f: impl FnOnce(&Tts) -> R) -> Option<R> {
             match Tts::new() {
                 Ok(t) => {
                     t.set_rate(TTS_RATE.get());
+                    TTS_OUTPUT.with_borrow(|o| {
+                        if o.is_some() {
+                            t.set_output_device(o.as_deref());
+                        }
+                    });
                     *slot = Some(t);
                 }
                 Err(e) => {
